@@ -9,3 +9,11 @@ edition = "2018"
 [dependencies]
 lazy_static = "1.4.0"
 spin = "0.5.2"
+
+[dev-dependencies]
+criterion="0.2"
+crossbeam-utils = "0.6.6"
+
+[[bench]]
+name="creation"
+harness=false
