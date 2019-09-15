@@ -2,14 +2,37 @@
 extern crate criterion;
 use criterion::black_box;
 use criterion::Criterion;
-use crossbeam_utils::thread;
 use std::sync::Arc;
+use string_cache::DefaultAtom;
+use string_interner::StringInterner;
 
 use ustring::*;
 
 fn create_ustrings(blns: &String, num: usize) {
     for s in blns.split_whitespace().cycle().take(num) {
         black_box(u!(s));
+    }
+}
+
+fn create_string_interner<S: string_interner::Symbol>(
+    interner: &mut StringInterner<S>,
+    blns: &String,
+    num: usize,
+) {
+    for s in blns.split_whitespace().cycle().take(num) {
+        black_box(interner.get_or_intern(s));
+    }
+}
+
+fn create_string_cache(blns: &String, num: usize) {
+    for s in blns.split_whitespace().cycle().take(num) {
+        black_box(DefaultAtom::from(s));
+    }
+}
+
+fn create_strings(blns: &String, num: usize) {
+    for s in blns.split_whitespace().cycle().take(num) {
+        black_box(String::from(s));
     }
 }
 
@@ -24,6 +47,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // 1) First pass with a HashMap gives ~88ns per creation
     // 2) Switching to custom hash table gives ~55ns per creation (std Mutex gives ~60ns)
     // 3) City hash gets us ~36ns
+    // 4) Bump allocator gets us ~34ns
     let s = blns.clone();
     c.bench_function("create 10k", move |b| {
         let s = s.clone();
@@ -33,7 +57,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    // No clearing gives ~53ns
     let s = blns.clone();
     c.bench_function("create 10k no clear", move |b| {
         let s = s.clone();
@@ -42,9 +65,35 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
+    let s = blns.clone();
+    c.bench_function("String::from (control)", move |b| {
+        let s = s.clone();
+        b.iter(|| {
+            create_strings(&s, 10_000);
+        });
+    });
+
+    let s = blns.clone();
+    c.bench_function("string-interner create 10k", move |b| {
+        let s = s.clone();
+        let mut interner = StringInterner::default();
+        b.iter(|| {
+            create_string_interner(&mut interner, &s, 10_000);
+        });
+    });
+
+    let s = blns.clone();
+    c.bench_function("string-cache create 10k", move |b| {
+        let s = s.clone();
+        b.iter(|| {
+            create_string_cache(&s, 10_000);
+        });
+    });
+
     // test lookups.
     // 1) First pass gives ~1ns for the lookup
     // 2) Switching to custom hash table gives ~2ns per lookup?
+    // 3) With allocator gets us back to ~1ns
     let ustrings: Vec<UString> = blns.split_whitespace().map(|s| u!(s)).collect();
     c.bench_function("lookup", move |b| {
         let us = &ustrings;
