@@ -36,18 +36,25 @@ fn create_strings(blns: &String, num: usize) {
     }
 }
 
+fn split_whitespace(blns: &String, num: usize) {
+    for s in blns.split_whitespace().cycle().take(num) {
+        black_box(s);
+    }
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("data")
         .join("blns.txt");
     let blns = Arc::new(std::fs::read_to_string(path).unwrap());
 
-    // there are 2146 tokens in blns.txt, so this will find an already-existing
-    // string ~4 times for every string created
+    // there are 1315 unique tokens in blns.txt, so this will find an already-existing
+    // string ~7.6 times for every string created
     // 1) First pass with a HashMap gives ~88ns per creation
     // 2) Switching to custom hash table gives ~55ns per creation (std Mutex gives ~60ns)
     // 3) City hash gets us ~36ns
     // 4) Bump allocator gets us ~34ns
+    // 5) 65% of that time is doing the string split so it's more like 12ns
     let s = blns.clone();
     c.bench_function("create 10k", move |b| {
         let s = s.clone();
@@ -66,10 +73,18 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let s = blns.clone();
-    c.bench_function("String::from (control)", move |b| {
+    c.bench_function("String::from", move |b| {
         let s = s.clone();
         b.iter(|| {
             create_strings(&s, 10_000);
+        });
+    });
+
+    let s = blns.clone();
+    c.bench_function("split_whitespace (control)", move |b| {
+        let s = s.clone();
+        b.iter(|| {
+            split_whitespace(&s, 10_000);
         });
     });
 

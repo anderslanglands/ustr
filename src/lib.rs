@@ -84,11 +84,7 @@
 
 #![feature(allocator_api)]
 use spin::Mutex;
-use std::cmp::Eq;
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::fmt;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::alloc::{System, Alloc};
 
 lazy_static::lazy_static! {
@@ -116,6 +112,9 @@ impl UString {
     /// let u2 = u!("constant-time comparisons rule");
     /// assert_eq!(u1, u2);
     /// ```
+    /// 
+    /// # Panics
+    /// If there are more than half a million strings (FIXME)
     pub fn from(string: &str) -> UString {
         let hash = fasthash::city::hash64(string.as_bytes());
         let mut sc = STRING_CACHE.lock();
@@ -196,7 +195,7 @@ struct StringCache {
     alloc: LeakyBumpAlloc,
     vec: Vec<*mut StringCacheEntry>,
     num_entries: usize,
-    capacity: usize,
+    _capacity: usize,
     mask: usize,
     total_allocated: usize,
 }
@@ -209,7 +208,7 @@ impl StringCache {
             alloc: LeakyBumpAlloc::new(capacity),
             vec: vec![std::ptr::null_mut(); capacity],
             num_entries: 0,
-            capacity,
+            _capacity: capacity,
             mask: capacity - 1,
             total_allocated: capacity,
         }
@@ -246,7 +245,7 @@ impl StringCache {
 
         // insert the new string
         unsafe {
-            let mut entry_ptr = self.vec.get_unchecked_mut(pos);
+            let entry_ptr = self.vec.get_unchecked_mut(pos);
             
             // add one to length for null byte
             let byte_len = string.len() + 1;
@@ -260,8 +259,8 @@ impl StringCache {
                 self.alloc = LeakyBumpAlloc::new(capacity * 2);
                 self.total_allocated += capacity * 2;
             }
-
             *entry_ptr = self.alloc.allocate(alloc_size, std::mem::align_of::<StringCacheEntry>()) as *mut StringCacheEntry;
+
             // write the header
             let write_ptr = (*entry_ptr) as *mut u64;
             std::ptr::write(write_ptr, hash);
@@ -352,6 +351,9 @@ macro_rules! u {
     };
 }
 
+// The world's dumbest allocator. Just keep bumping a pointer until we run out
+// of memory, in which case we panic. StringCache is responsible for creating
+// a new allocator when that's about to happen.
 struct LeakyBumpAlloc {
     data: *mut u8,
     allocated: usize,
@@ -374,6 +376,7 @@ impl LeakyBumpAlloc {
         }
     }
 
+    // Allocates a new chunk. Panics if out of memory.
     pub unsafe fn allocate(&mut self, num_bytes: usize, alignment: usize) -> *mut u8 {
         let aligned_size = round_up_to(num_bytes, alignment);
 
@@ -416,17 +419,19 @@ mod tests {
         use super::UString;
         use std::ffi::CStr;
 
-        let u_fox = u!("The quick brown fox jumps over the lazy dog.");
+        let s_fox = "The quick brown fox jumps over the lazy dog.";
+        let u_fox = u!(s_fox);
         let fox = unsafe { CStr::from_ptr(u_fox.as_c_str()) }
             .to_string_lossy()
             .into_owned();
-        println!("{}", fox);
+        assert_eq!(fox, s_fox);
 
-        let u_odys = u!("Τη γλώσσα μου έδωσαν ελληνική");
+        let s_odys = "Τη γλώσσα μου έδωσαν ελληνική";
+        let u_odys = u!(s_odys);
         let odys = unsafe { CStr::from_ptr(u_odys.as_c_str()) }
             .to_string_lossy()
             .into_owned();
-        println!("{}", odys);
+        assert_eq!(odys, s_odys);
     }
 
     #[test]
