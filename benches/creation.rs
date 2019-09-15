@@ -21,7 +21,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // there are 2146 tokens in blns.txt, so this will find an already-existing
     // string ~4 times for every string created
-    // First pass with a HashMap gives ~88ns per creation
+    // 1) First pass with a HashMap gives ~88ns per creation
+    // 2) Switching to custom hash table gives ~55ns per creation (std Mutex gives ~60ns)
+    // 3) City hash gets us ~36ns
     let s = blns.clone();
     c.bench_function("create 10k", move |b| {
         let s = s.clone();
@@ -31,8 +33,18 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
+    // No clearing gives ~53ns
+    let s = blns.clone();
+    c.bench_function("create 10k no clear", move |b| {
+        let s = s.clone();
+        b.iter(|| {
+            create_ustrings(&s, 10_000);
+        });
+    });
+
     // test lookups.
-    // First pass gives ~1ns for the lookup
+    // 1) First pass gives ~1ns for the lookup
+    // 2) Switching to custom hash table gives ~2ns per lookup?
     let ustrings: Vec<UString> = blns.split_whitespace().map(|s| u!(s)).collect();
     c.bench_function("lookup", move |b| {
         let us = &ustrings;

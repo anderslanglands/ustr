@@ -1,3 +1,4 @@
+use spin::Mutex;
 use std::cmp::Eq;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -5,7 +6,7 @@ use std::fmt;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 lazy_static::lazy_static! {
-    static ref STRING_CACHE: spin::RwLock<StringCache> = spin::RwLock::new(StringCache::new());
+    static ref STRING_CACHE: Mutex<StringCache> = Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY));
 }
 
 pub struct UString {
@@ -14,43 +15,11 @@ pub struct UString {
 
 impl UString {
     pub fn new(string: &str) -> UString {
-        {
-            let sc = STRING_CACHE.read();
-            if let Some(p) = sc.set.get(string) {
-                return UString { sce: *p };
-            }
+        let hash = fasthash::city::hash64(string.as_bytes());
+        let mut sc = STRING_CACHE.lock();
+        UString {
+            sce: sc.insert(string, hash),
         }
-
-        // create the cached hash
-        let mut hasher = DefaultHasher::new();
-        string.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // shrink the string's storage, convert it to u8, then push a '\0' on
-        // the end so we can pass it to C.
-        let mut s = String::from(string);
-        s.shrink_to_fit();
-        let len = s.len();
-        let mut s = s.into_bytes();
-        s.push(0);
-        let ptr = s.as_ptr();
-        // leak the string
-        let s = s.into_boxed_slice();
-        Box::leak(s);
-
-        // write a new entry into the string cache
-        let sce = StringCacheEntry { hash, ptr, len };
-        let mut sc = STRING_CACHE.write();
-        if sc.vec.len() == sc.vec.capacity() - 1 {
-            // leak the current storage and allocate some more
-            let mut v = Vec::<StringCacheEntry>::with_capacity(sc.vec.capacity() * 2);
-            std::mem::swap(&mut sc.vec, &mut v);
-            Box::leak(v.into_boxed_slice());
-        }
-        sc.vec.push(sce);
-        let p = sc.vec.last().unwrap() as *const StringCacheEntry;
-        sc.set.insert(string.into(), p);
-        UString { sce: p }
     }
 
     pub fn as_str(&self) -> &str {
@@ -106,28 +75,109 @@ impl fmt::Debug for UString {
 }
 
 struct StringCache {
-    set: HashMap<String, *const StringCacheEntry>,
     vec: Vec<StringCacheEntry>,
+    num_entries: usize,
+    capacity: usize,
+    mask: usize,
 }
 
+const INITIAL_CAPACITY: usize = 1 << 20;
+
 impl StringCache {
-    pub fn new() -> StringCache {
+    pub fn with_capacity(capacity: usize) -> StringCache {
         StringCache {
-            set: HashMap::new(),
-            vec: Vec::with_capacity(1024),
+            vec: vec![StringCacheEntry::default(); capacity],
+            num_entries: 0,
+            capacity,
+            mask: capacity - 1,
+        }
+    }
+
+    fn insert(&mut self, string: &str, hash: u64) -> *const StringCacheEntry {
+        let mut pos = self.mask & hash as usize;
+        let mut dist = 0;
+        loop {
+            let entry = unsafe { self.vec.get_unchecked(pos) };
+            if entry.ptr.is_null() {
+                // found empty slot to insert
+                break;
+            }
+
+            if entry.hash == hash
+                && entry.len == string.len()
+                && unsafe {
+                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(entry.ptr, entry.len))
+                } == string
+            {
+                // found matching string in the cache already, return it
+                return entry as *const StringCacheEntry;
+            }
+
+            // keep looking
+            dist += 1;
+            pos = (pos + dist) & self.mask;
+        }
+
+        // insert the new string
+        let entry = unsafe { self.vec.get_unchecked_mut(pos) };
+        *entry = StringCacheEntry::new(string, hash);
+
+        self.num_entries += 1;
+        if self.num_entries * 2 > self.mask {
+            // TODO:
+            // grow storage to maintain 0.5 load factor
+        }
+
+        entry as *const StringCacheEntry
+    }
+
+    fn clear(&mut self) {
+        unsafe {
+            libc::memset(
+                self.vec.as_mut_ptr() as *mut std::os::raw::c_void,
+                0,
+                self.num_entries,
+            );
         }
     }
 }
 
 pub fn _clear_cache() {
-    let mut sc = STRING_CACHE.write();
-    *sc = StringCache::new();
+    STRING_CACHE.lock().clear();
 }
 
+#[repr(C)]
+#[derive(Clone)]
 struct StringCacheEntry {
-    hash: u64,
     ptr: *const u8,
     len: usize,
+    hash: u64,
+}
+
+impl StringCacheEntry {
+    pub fn new(string: &str, hash: u64) -> StringCacheEntry {
+        let mut s = String::from(string);
+        s.shrink_to_fit();
+        let len = s.len();
+        let mut s = s.into_bytes();
+        s.push(0);
+        let ptr = s.as_ptr();
+        // leak the string
+        let s = s.into_boxed_slice();
+        Box::leak(s);
+
+        StringCacheEntry { ptr, len, hash }
+    }
+}
+
+impl Default for StringCacheEntry {
+    fn default() -> StringCacheEntry {
+        StringCacheEntry {
+            ptr: std::ptr::null(),
+            len: 0,
+            hash: 0,
+        }
+    }
 }
 
 unsafe impl Send for StringCacheEntry {}
