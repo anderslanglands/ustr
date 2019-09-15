@@ -161,6 +161,13 @@ impl UString {
     }
 }
 
+// We're safe to impl these because the strings they reference are immutable
+// and for all intents and purposes 'static since they're never deleted after
+// being created
+unsafe impl Send for UString {}
+unsafe impl Sync for UString {}
+
+
 impl PartialEq<&str> for UString {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
@@ -193,6 +200,9 @@ impl fmt::Debug for UString {
 
 struct StringCache {
     alloc: LeakyBumpAlloc,
+    // we keep old allocators around so we can iterate over all strings ever
+    // created.
+    old_allocs: Vec<LeakyBumpAlloc>,
     vec: Vec<*mut StringCacheEntry>,
     num_entries: usize,
     _capacity: usize,
@@ -200,12 +210,21 @@ struct StringCache {
     total_allocated: usize,
 }
 
+// Initial size of the StringCache table
 const INITIAL_CAPACITY: usize = 1 << 20;
+// const INITIAL_CAPACITY: usize = 4;
+// Initial size of the allocator storage (in bytes)
+const INITIAL_ALLOC: usize = 4 << 5;
 
 impl StringCache {
     pub fn with_capacity(capacity: usize) -> StringCache {
         StringCache {
-            alloc: LeakyBumpAlloc::new(capacity),
+            // current allocator
+            alloc: LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>()),
+            // old allocators we'll keep around for iteration.
+            // 16 would mean we've allocated 128GB of string storage since we
+            // double each time
+            old_allocs: Vec::with_capacity(16), 
             vec: vec![std::ptr::null_mut(); capacity],
             num_entries: 0,
             _capacity: capacity,
@@ -256,10 +275,14 @@ impl StringCache {
             let capacity = self.alloc.capacity();
             let allocated = self.alloc.allocated();
             if alloc_size + allocated > capacity {
-                self.alloc = LeakyBumpAlloc::new(capacity * 2);
-                self.total_allocated += capacity * 2;
+                // just in case, make sure we'll definitely have enough storage
+                // for the new string.
+                let new_capacity = (capacity * 2).max(alloc_size);
+                let old_alloc = std::mem::replace(&mut self.alloc, LeakyBumpAlloc::new(new_capacity, std::mem::align_of::<StringCacheEntry>()));
+                self.old_allocs.push(old_alloc);
+                self.total_allocated += new_capacity;
             }
-            *entry_ptr = self.alloc.allocate(alloc_size, std::mem::align_of::<StringCacheEntry>()) as *mut StringCacheEntry;
+            *entry_ptr = self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
 
             // write the header
             let write_ptr = (*entry_ptr) as *mut u64;
@@ -286,11 +309,11 @@ impl StringCache {
 
     fn clear(&mut self) {
         unsafe {
-            libc::memset(
-                self.vec.as_mut_ptr() as *mut std::os::raw::c_void,
-                0,
-                self.num_entries,
-            );
+            // just zero all the pointers that have already been set
+            std::ptr::write_bytes(self.vec.as_mut_ptr(), 0, self.num_entries);
+            self.num_entries = 0;
+            self.old_allocs.clear();
+            self.alloc = LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>());
         }
     }
 
@@ -301,12 +324,67 @@ impl StringCache {
     pub(crate) fn num_entries(&self) -> usize {
         self.num_entries
     }
+
+    pub fn iter(&self) -> StringCacheIterator {
+        let mut allocs = self.old_allocs.iter().map(|a| (a.start(), a.end())).collect::<Vec<_>>();
+        allocs.push((self.alloc.start(), self.alloc.end()));
+        let current_ptr = allocs[0].0;
+        StringCacheIterator {
+            allocs,
+            current_alloc: 0,
+            current_ptr,
+        }
+    }
+}
+
+// We're OK to send the StringCache (not that we will, but we need it for the 
+// mutex).
+unsafe impl Send for StringCache {}
+
+pub struct StringCacheIterator {
+    allocs: Vec<(*const u8, *const u8)>,
+    current_alloc: usize,
+    current_ptr: *const u8,
+}
+
+impl Iterator for StringCacheIterator {
+    type Item = &'static str;
+    fn next(&mut self) -> Option<Self::Item> {
+        let (_, end) = self.allocs[self.current_alloc];
+        if self.current_ptr >= end {
+            // we've reached the end of the current alloc
+            if self.current_alloc == self.allocs.len() - 1 {
+                // we've reached the end
+                return None;
+            } else {
+                // advance to the next alloc
+                self.current_alloc += 1;
+                let (current_ptr, _) = self.allocs[self.current_alloc];
+                self.current_ptr = current_ptr;
+
+            }
+        }
+
+        // start of the StringCacheEntry is the hash
+        unsafe {
+            let hash_ptr = self.current_ptr as *const u64;
+            let len_ptr = hash_ptr.offset(1) as *const usize;
+            let len = *len_ptr;
+            let char_ptr = len_ptr.offset(1) as *const u8;
+            // the next entry will be the size of the number of bytes in the
+            // string, +1 for the null byte, rounded up to the alignment (8)
+            self.current_ptr = char_ptr.offset(round_up_to(len+1, std::mem::align_of::<StringCacheEntry>()) as isize);
+
+            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(char_ptr, len));
+            Some(s)
+        }
+    }
 }
 
 // Clears the hash map. Used for benchmarking purposes. Do not call this.
 #[doc(hidden)]
 pub fn _clear_cache() {
-    STRING_CACHE.lock().clear();
+    STRING_CACHE.lock().clear()
 }
 
 /// Returns the total amount of memory allocated and in use by the cache in bytes
@@ -315,8 +393,31 @@ pub fn total_allocated() -> usize {
 }
 
 /// Returns the number of unique strings in the cache
+/// 
+/// ```
+/// use ustring::{u, UString}
+/// 
+/// let _ = u!("Hello");
+/// let _ = u!(", World!");
+/// assert_eq!(ustring::num_entries(), 2);
+/// ```
 pub fn num_entries() -> usize {
     STRING_CACHE.lock().num_entries()
+}
+
+/// Return an iterator over the entire string cache.
+/// 
+/// If another thread is adding strings concurrently to this call then they might 
+/// not show up in the view of the cache presented by this iterator.
+/// 
+/// # Safety
+/// This returns an iterator to the state of the cache at the time when 
+/// `string_cache_iter()` was called. It is of course possible that another 
+/// thread will add more strings to the cache after this, but since we never
+/// destroy the strings, they remain valid, meaning it's safe to iterate over
+/// them, the list jsut might not be completely up to date.
+pub fn string_cache_iter() -> StringCacheIterator {
+    STRING_CACHE.lock().iter()
 }
 
 #[repr(C)]
@@ -325,15 +426,6 @@ struct StringCacheEntry {
     hash: u64,
     len: usize,
 }
-
-unsafe impl Send for StringCacheEntry {}
-unsafe impl Sync for StringCacheEntry {}
-
-unsafe impl Send for StringCache {}
-unsafe impl Sync for StringCache {}
-
-unsafe impl Send for UString {}
-unsafe impl Sync for UString {}
 
 /// Shorthand macro for creating a UString.
 /// 
@@ -355,9 +447,16 @@ macro_rules! u {
 // of memory, in which case we panic. StringCache is responsible for creating
 // a new allocator when that's about to happen.
 struct LeakyBumpAlloc {
+    // pointer to start of free, aligned memory
     data: *mut u8,
+    // number of bytes given out
     allocated: usize,
+    // total capacity 
     capacity: usize,
+    // alignment of all allocations
+    alignment: usize,
+    // pointer to the start of the whole arena
+    start: *const u8,
 }
 
 fn round_up_to(n: usize, align: usize) -> usize {
@@ -366,19 +465,21 @@ fn round_up_to(n: usize, align: usize) -> usize {
 }
 
 impl LeakyBumpAlloc {
-    pub fn new(capacity: usize) -> LeakyBumpAlloc {
+    pub fn new(capacity: usize, alignment: usize) -> LeakyBumpAlloc {
         let data = System.alloc_array::<u8>(capacity).unwrap().as_ptr();
         debug_assert!(data.align_offset(8) == 0);
         LeakyBumpAlloc {
             data,
             allocated: 0,
             capacity,
+            alignment,
+            start: data,
         }
     }
 
     // Allocates a new chunk. Panics if out of memory.
-    pub unsafe fn allocate(&mut self, num_bytes: usize, alignment: usize) -> *mut u8 {
-        let aligned_size = round_up_to(num_bytes, alignment);
+    pub unsafe fn allocate(&mut self, num_bytes: usize) -> *mut u8 {
+        let aligned_size = round_up_to(num_bytes, self.alignment);
 
         if self.allocated + aligned_size > self.capacity {
             panic!("Bumped over capacity");
@@ -398,6 +499,14 @@ impl LeakyBumpAlloc {
     pub fn capacity(&self) -> usize {
         self.capacity
     }
+
+    pub(crate) fn start(&self) -> *const u8 {
+        self.start
+    }
+
+    pub(crate) fn end(&self) -> *const u8 {
+        self.data
+    }
 }
 
 #[cfg(test)]
@@ -410,8 +519,6 @@ mod tests {
         assert_eq!(u_hello, "hello");
         let u_world = u!("world");
         assert_eq!(u_world, String::from("world"));
-
-        println!("{}, {}!", u_hello, u_world);
     }
 
     #[test]
@@ -436,18 +543,21 @@ mod tests {
 
     #[test]
     fn blns() {
-        use super::UString;
+        use super::{string_cache_iter, UString};
+        use std::collections::HashSet;
+
+        // clear the cache first or our results will be wrong
+        super::_clear_cache();
+
         let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("data")
             .join("blns.txt");
         let blns = std::fs::read_to_string(path).unwrap();
 
-        println!("Num strings: {}", blns.split_whitespace().count());
-        let mut hs = std::collections::HashSet::new();
+        let mut hs = HashSet::new();
         for s in blns.split_whitespace() {
             hs.insert(s);
         }
-        println!("Num unique strings: {}", hs.len());
 
         let mut us = Vec::new();
         let mut ss = Vec::new();
@@ -458,11 +568,21 @@ mod tests {
             ss.push(s.to_owned());
         }
 
-        for (u, s) in us.iter().zip(ss.iter()) {
-            assert_eq!(u, s);
+        let mut hs_u = HashSet::new();
+        for s in string_cache_iter() {
+            hs_u.insert(s);
+        }
+        let diff: HashSet<_> = hs.difference(&hs_u).collect();
+        // println!("Difference: ");
+        for s in diff.iter() {
+            println!("{}", s);
         }
 
-        println!("Total allocated: {}", super::total_allocated());
-        println!("Num entries: {}", super::num_entries());
+        // check that the number of entries is the same
+        assert_eq!(super::num_entries(), hs.len());
+
+        // check that we have the exact same (unique) strings in the cache as in
+        // the source data
+        assert_eq!(diff.iter().count(), 0);
     }
 }
