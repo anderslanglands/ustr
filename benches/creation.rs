@@ -2,6 +2,8 @@
 extern crate criterion;
 use criterion::black_box;
 use criterion::Criterion;
+use crossbeam_channel::bounded;
+use crossbeam_utils::thread::scope;
 use std::sync::Arc;
 use string_cache::DefaultAtom;
 use string_interner::StringInterner;
@@ -33,12 +35,6 @@ fn create_string_cache(blns: &Vec<String>, num: usize) {
 fn create_strings(blns: &Vec<String>, num: usize) {
     for s in blns.iter().cycle().take(num) {
         black_box(String::from(s));
-    }
-}
-
-fn split_whitespace(blns: &Vec<String>, num: usize) {
-    for s in blns.iter().cycle().take(num) {
-        black_box(s);
     }
 }
 
@@ -126,6 +122,70 @@ fn criterion_benchmark(c: &mut Criterion) {
                 })
             }
         });
+    });
+
+    let s = blns.clone();
+    let num_threads = 2;
+    let num = 10_000;
+    c.bench_function("create 10k 2 threads", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            black_box(u!(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    c.bench_function("create 10k 2 threads string interner", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        let interner = spin::Mutex::new(StringInterner::default());
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            let mut int = interner.lock();
+                            black_box(int.get_or_intern(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
     });
 }
 
