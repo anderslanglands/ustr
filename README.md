@@ -23,6 +23,10 @@ let h2 = u!("hello");
 assert_eq!(h1, h2); //< just a pointer comparison
 ```
 
+# Testing
+Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due
+to concurrent tests filling the cache.
+
 # NOTICE
 This crate is pre-alpha. It has been tested (barely) on x86-64. Whatever
 your architecture, there's probably undefined behaviour lurking in here, so
