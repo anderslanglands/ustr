@@ -212,9 +212,8 @@ struct StringCache {
 
 // Initial size of the StringCache table
 const INITIAL_CAPACITY: usize = 1 << 20;
-// const INITIAL_CAPACITY: usize = 4;
 // Initial size of the allocator storage (in bytes)
-const INITIAL_ALLOC: usize = 4 << 5;
+const INITIAL_ALLOC: usize = 4 << 20;
 
 impl StringCache {
     pub fn with_capacity(capacity: usize) -> StringCache {
@@ -298,23 +297,55 @@ impl StringCache {
 
             self.num_entries += 1;
             if self.num_entries * 2 > self.mask {
-                // TODO:
-                // grow storage to maintain 0.5 load factor
-                panic!("MUST GROW");
+                self.grow();
             }
 
             char_ptr
         }
     }
 
-    fn clear(&mut self) {
-        unsafe {
-            // just zero all the pointers that have already been set
-            std::ptr::write_bytes(self.vec.as_mut_ptr(), 0, self.num_entries);
-            self.num_entries = 0;
-            self.old_allocs.clear();
-            self.alloc = LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>());
+    // Double the size of the map storage
+    unsafe fn grow(&mut self) {
+        let new_mask = self.mask * 2 + 1;
+        let mut new_entries = vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
+        // copy the existing map into the new map
+        let mut to_copy = self.num_entries;
+        for e in self.vec.iter_mut() {
+            if e.is_null() {
+                continue;
+            }
+
+            let hash = *(*e as *const u64);
+            
+            let mut pos = (hash as usize) & new_mask;
+            let mut dist = 0;
+            loop {
+                if new_entries[pos].is_null() {
+                    // here's an empty slot to put the pointer in
+                    break;
+                }
+
+                dist += 1;
+                pos = (pos + dist) & new_mask;
+            }
+
+            new_entries[pos] = *e;
+            to_copy -= 1;
+            if to_copy == 0 {
+                break;
+            }
         }
+
+        self.vec = new_entries;
+        self.mask = new_mask;
+    }
+
+    unsafe fn clear(&mut self) {
+        // just zero all the pointers that have already been set
+        std::ptr::write_bytes(self.vec.as_mut_ptr(), 0, self.num_entries);
+        self.num_entries = 0;
+        self.old_allocs.clear();
+        self.alloc = LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>());
     }
 
     pub(crate) fn total_allocated(&self) -> usize {
@@ -384,7 +415,9 @@ impl Iterator for StringCacheIterator {
 // Clears the hash map. Used for benchmarking purposes. Do not call this.
 #[doc(hidden)]
 pub fn _clear_cache() {
-    STRING_CACHE.lock().clear()
+    unsafe {
+        STRING_CACHE.lock().clear()
+    }
 }
 
 /// Returns the total amount of memory allocated and in use by the cache in bytes
