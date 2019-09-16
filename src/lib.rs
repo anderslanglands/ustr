@@ -88,7 +88,40 @@ use std::fmt;
 use std::alloc::{System, Alloc};
 
 lazy_static::lazy_static! {
-    static ref STRING_CACHE: Mutex<StringCache> = Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY));
+    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = [
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+        Mutex::new(StringCache::with_capacity(INITIAL_CAPACITY / NUM_BINS)),
+    ];
 }
 
 /// A handle representing a string in the global string cache.
@@ -99,6 +132,13 @@ lazy_static::lazy_static! {
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub struct UString {
     char_ptr: *const u8,
+}
+
+// Use the top bits of the hash to choose a bin in order to reduce lock
+// contention
+#[inline] 
+fn whichbin(hash: u64) -> usize {
+    ((hash >> TOP_SHIFT as u64) % NUM_BINS as u64) as usize
 }
 
 impl UString {
@@ -112,12 +152,9 @@ impl UString {
     /// let u2 = u!("constant-time comparisons rule");
     /// assert_eq!(u1, u2);
     /// ```
-    /// 
-    /// # Panics
-    /// If there are more than half a million strings (FIXME)
     pub fn from(string: &str) -> UString {
         let hash = fasthash::city::hash64(string.as_bytes());
-        let mut sc = STRING_CACHE.lock();
+        let mut sc = STRING_CACHE[whichbin(hash)].lock();
         UString {
             char_ptr: sc.insert(string, hash),
         }
@@ -141,8 +178,7 @@ impl UString {
     /// # Safety
     /// This is just passing a raw byte array with a null terminator to C. 
     /// If your source string contains non-ascii bytes then this will pass them
-    /// straight along with no checking. If your C function can't handle them 
-    /// then there's no telling what will happen.
+    /// straight along with no checking. 
     pub unsafe fn as_c_str(&self) -> *const std::os::raw::c_char {
         self.char_ptr as *const std::os::raw::c_char
     }
@@ -214,12 +250,18 @@ struct StringCache {
 const INITIAL_CAPACITY: usize = 1 << 20;
 // Initial size of the allocator storage (in bytes)
 const INITIAL_ALLOC: usize = 4 << 20;
+// Number of bins (shards) for map
+const BIN_SHIFT: usize = 5;
+const NUM_BINS: usize = 1 << BIN_SHIFT;
+// Shift for top bits to determine bin a hash falls into
+const TOP_SHIFT: usize = 8 * std::mem::size_of::<usize>() - BIN_SHIFT;
+
 
 impl StringCache {
     pub fn with_capacity(capacity: usize) -> StringCache {
         StringCache {
             // current allocator
-            alloc: LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>()),
+            alloc: LeakyBumpAlloc::new(INITIAL_ALLOC / NUM_BINS, std::mem::align_of::<StringCacheEntry>()),
             // old allocators we'll keep around for iteration.
             // 16 would mean we've allocated 128GB of string storage since we
             // double each time
@@ -345,7 +387,7 @@ impl StringCache {
         std::ptr::write_bytes(self.vec.as_mut_ptr(), 0, self.num_entries);
         self.num_entries = 0;
         self.old_allocs.clear();
-        self.alloc = LeakyBumpAlloc::new(INITIAL_ALLOC, std::mem::align_of::<StringCacheEntry>());
+        self.alloc = LeakyBumpAlloc::new(INITIAL_ALLOC / NUM_BINS, std::mem::align_of::<StringCacheEntry>());
     }
 
     pub(crate) fn total_allocated(&self) -> usize {
@@ -356,6 +398,7 @@ impl StringCache {
         self.num_entries
     }
 
+    // Get an iterator over all strings in the cache
     pub fn iter(&self) -> StringCacheIterator {
         let mut allocs = self.old_allocs.iter().map(|a| (a.start(), a.end())).collect::<Vec<_>>();
         allocs.push((self.alloc.start(), self.alloc.end()));
@@ -369,13 +412,13 @@ impl StringCache {
 }
 
 // We're OK to send the StringCache (not that we will, but we need it for the 
-// mutex).
+// mutex). This is safe when access is protected by a mutex
 unsafe impl Send for StringCache {}
 
 pub struct StringCacheIterator {
-    allocs: Vec<(*const u8, *const u8)>,
-    current_alloc: usize,
-    current_ptr: *const u8,
+    pub(crate) allocs: Vec<(*const u8, *const u8)>,
+    pub(crate) current_alloc: usize,
+    pub(crate) current_ptr: *const u8,
 }
 
 impl Iterator for StringCacheIterator {
@@ -416,26 +459,32 @@ impl Iterator for StringCacheIterator {
 #[doc(hidden)]
 pub fn _clear_cache() {
     unsafe {
-        STRING_CACHE.lock().clear()
+        for m in STRING_CACHE.iter() {
+            m.lock().clear();
+        }
     }
 }
 
 /// Returns the total amount of memory allocated and in use by the cache in bytes
 pub fn total_allocated() -> usize {
-    STRING_CACHE.lock().total_allocated()
+    STRING_CACHE.iter().map(|sc| sc.lock().total_allocated()).sum()
 }
 
 /// Returns the number of unique strings in the cache
 /// 
 /// ```
-/// use ustring::{u, UString}
+/// use ustring::{u, UString};
 /// 
 /// let _ = u!("Hello");
 /// let _ = u!(", World!");
 /// assert_eq!(ustring::num_entries(), 2);
 /// ```
 pub fn num_entries() -> usize {
-    STRING_CACHE.lock().num_entries()
+    STRING_CACHE.iter().map(|sc| sc.lock().num_entries()).sum()
+}
+
+pub fn num_entries_per_bin() -> Vec<usize> {
+    STRING_CACHE.iter().map(|sc| sc.lock().num_entries()).collect::<Vec<_>>()
 }
 
 /// Return an iterator over the entire string cache.
@@ -450,7 +499,21 @@ pub fn num_entries() -> usize {
 /// destroy the strings, they remain valid, meaning it's safe to iterate over
 /// them, the list jsut might not be completely up to date.
 pub fn string_cache_iter() -> StringCacheIterator {
-    STRING_CACHE.lock().iter()
+    let mut allocs = Vec::new();
+    for m in STRING_CACHE.iter() {
+        let sc = m.lock();
+        for a in &sc.old_allocs {
+            allocs.push((a.start(), a.end()));
+        }
+        allocs.push((sc.alloc.start(), sc.alloc.end()));
+    }
+
+    let current_ptr = allocs[0].0;
+    StringCacheIterator {
+        allocs,
+        current_alloc: 0,
+        current_ptr,
+    }
 }
 
 #[repr(C)]
@@ -606,10 +669,6 @@ mod tests {
             hs_u.insert(s);
         }
         let diff: HashSet<_> = hs.difference(&hs_u).collect();
-        // println!("Difference: ");
-        for s in diff.iter() {
-            println!("{}", s);
-        }
 
         // check that the number of entries is the same
         assert_eq!(super::num_entries(), hs.len());
@@ -617,5 +676,8 @@ mod tests {
         // check that we have the exact same (unique) strings in the cache as in
         // the source data
         assert_eq!(diff.iter().count(), 0);
+
+        let nbs = super::num_entries_per_bin();
+        println!("{:?}", nbs);
     }
 }

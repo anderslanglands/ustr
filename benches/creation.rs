@@ -56,16 +56,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("create 10k", move |b| {
         let s = s.clone();
         b.iter(|| {
-            _clear_cache();
-            create_ustrings(&(*s), 10_000);
-        });
-    });
-
-    // ~14ns
-    let s = blns.clone();
-    c.bench_function("create 10k no clear", move |b| {
-        let s = s.clone();
-        b.iter(|| {
             create_ustrings(&(*s), 10_000);
         });
     });
@@ -168,6 +158,160 @@ fn criterion_benchmark(c: &mut Criterion) {
                         for s in s.iter().cycle().take(num) {
                             let mut int = interner.lock();
                             black_box(int.get_or_intern(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    c.bench_function("create 10k 2 threads string-cache", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            black_box(DefaultAtom::from(s.as_str()));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    c.bench_function("create 10k 2 threads String::from", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            black_box(String::from(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    let num_threads = 4;
+    let num = 10_000;
+    c.bench_function("create 10k 4 threads", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            black_box(u!(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    c.bench_function("create 10k 4 threads string interner", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        let interner = spin::Mutex::new(StringInterner::default());
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            let mut int = interner.lock();
+                            black_box(int.get_or_intern(s));
+                        }
+                        tx2.send(()).unwrap();
+                    }
+                });
+            }
+
+            b.iter(|| {
+                for _ in 0..num_threads {
+                    tx1.send(()).unwrap();
+                }
+
+                for _ in 0..num_threads {
+                    rx2.recv().unwrap();
+                }
+            });
+            drop(tx1);
+        })
+        .unwrap();
+    });
+
+    let s = blns.clone();
+    c.bench_function("create 10k 4 threads String::from", move |b| {
+        let (tx1, rx1) = bounded(0);
+        let (tx2, rx2) = bounded(0);
+        scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| {
+                    while rx1.recv().is_ok() {
+                        for s in s.iter().cycle().take(num) {
+                            black_box(String::from(s));
                         }
                         tx2.send(()).unwrap();
                     }

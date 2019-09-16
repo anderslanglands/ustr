@@ -21,3 +21,11 @@ string_cache = "0.7.3"
 [[bench]]
 name="creation"
 harness=false
+
+[[bench]]
+name="multi"
+harness=false
+
+# [profile.release]
+# debug=true
+# lto=false
