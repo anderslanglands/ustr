@@ -14,7 +14,7 @@ is only 3MB, so it's probably fine.
 
 This crate is directly inspired by [OpenImageIO's ustring](https://github.com/OpenImageIO/oiio/blob/master/src/include/OpenImageIO/ustring.h)
 but it is NOT binary-compatible (yet). The underlying hash map implementation
-is directy ported from OIIO (but without the binning).
+is directy ported from OIIO.
 
 ```rust
 use ustring::{UString, u};
@@ -53,14 +53,14 @@ need to allocate new storage.  Destruction of a ustring is trivial,
 there is no de-allocation because the canonical version stays in
 the set.  Also, therefore, no user code mistake can lead to
 memory leaks.
-- Creating a new UString is faster than String::from()
 
 But there are some problems, too.  Canonical strings are never freed
 from the table.  So in some sense all the strings "leak", but they
 only leak one copy for each unique string that the program ever comes
-across.
+across. Creating a `UString` is roughly equivalent to `String::from()` on a
+single thread, but performance will be worse if trying to create many `UString`s in tight loops from multiple threads due to lock contention for the global cache.
 
-On the whole, ustrings are a really great string representation
+On the whole, `UString`s are a really great string representation
 - if you tend to have (relatively) few unique strings, but many
 copies of those strings;
 - if the creation of strings from raw characters is relatively
@@ -96,3 +96,5 @@ Redistribution and use in source and binary forms, with or without modification,
 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Contains a copy of Max Woolf's [Big List of Naughty Strings](https://github.com/minimaxir/big-list-of-naughty-strings), licensed as MIT.
