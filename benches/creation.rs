@@ -10,34 +10,6 @@ use string_interner::StringInterner;
 
 use ustring::*;
 
-fn create_ustrings(blns: &Vec<String>, num: usize) {
-    for s in blns.iter().cycle().take(num) {
-        black_box(u!(s));
-    }
-}
-
-fn create_string_interner<S: string_interner::Symbol>(
-    interner: &mut StringInterner<S>,
-    blns: &Vec<String>,
-    num: usize,
-) {
-    for s in blns.iter().cycle().take(num) {
-        black_box(interner.get_or_intern(s));
-    }
-}
-
-fn create_string_cache(blns: &Vec<String>, num: usize) {
-    for s in blns.iter().cycle().take(num) {
-        black_box(DefaultAtom::from(s.as_str()));
-    }
-}
-
-fn create_strings(blns: &Vec<String>, num: usize) {
-    for s in blns.iter().cycle().take(num) {
-        black_box(String::from(s));
-    }
-}
-
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("data")
@@ -49,6 +21,29 @@ fn criterion_benchmark(c: &mut Criterion) {
             .collect::<Vec<_>>(),
     );
 
+    let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("data")
+        .join("raft-large-directories.txt");
+    let raft = std::fs::read_to_string(path).unwrap();
+    let raft = Arc::new(
+        raft.split_whitespace()
+            .collect::<Vec<_>>()
+            .chunks(3)
+            .map(|s| {
+                if s.len() == 3 {
+                    format!("{}/{}/{}", s[0], s[1], s[2])
+                } else {
+                    s[0].to_owned()
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
+
+    for s in raft.iter().take(5) {
+        println!("{}", s);
+    }
+
+    /*
     // there are 1315 unique tokens in blns.txt, so this will find an already-existing
     // string ~7.6 times for every string created
     // ~14ns
@@ -59,278 +54,304 @@ fn criterion_benchmark(c: &mut Criterion) {
             create_ustrings(&(*s), 10_000);
         });
     });
+    */
 
-    // ~15ns
-    let s = blns.clone();
-    c.bench_function("String::from", move |b| {
-        let s = s.clone();
-        b.iter(|| {
-            create_strings(&(*s), 10_000);
-        });
-    });
+    let num = 4_000;
+    for num_threads in [1, 2, 4, 6, 8, 12].iter() {
+        let num_threads = *num_threads;
+        let s = blns.clone();
+        c.bench_function(
+            &format!("blns ustring x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                scope(|scope| {
+                    for _ in 0..num_threads {
+                        scope.spawn(|_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().cycle().take(num) {
+                                    black_box(u!(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
+                    }
 
-    // ~28ns
-    let s = blns.clone();
-    c.bench_function("string-interner create 10k", move |b| {
-        let s = s.clone();
-        let mut interner = StringInterner::default();
-        b.iter(|| {
-            create_string_interner(&mut interner, &(*s), 10_000);
-        });
-    });
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
 
-    // ~28ns
-    let s = blns.clone();
-    let mut interner = StringInterner::default();
-    c.bench_function("string-interner create 10k one interner", move |b| {
-        let s = s.clone();
-        b.iter(|| {
-            create_string_interner(&mut interner, &(*s), 10_000);
-        });
-    });
-
-    // ~55ns
-    let s = blns.clone();
-    c.bench_function("string-cache create 10k", move |b| {
-        let s = s.clone();
-        b.iter(|| {
-            create_string_cache(&(*s), 10_000);
-        });
-    });
-
-    // test lookups.
-    // 1) First pass gives ~1ns for the lookup
-    // 2) Switching to custom hash table gives ~2ns per lookup?
-    // 3) With allocator gets us back to ~1ns
-    let ustrings: Vec<UString> = blns.iter().map(|s| u!(s)).collect();
-    c.bench_function("lookup", move |b| {
-        let us = &ustrings;
-        b.iter(|| {
-            for u in us {
-                black_box({
-                    u.as_str();
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
+                        }
+                    });
+                    drop(tx1);
                 })
-            }
-        });
-    });
+                .unwrap();
+            },
+        );
 
-    let s = blns.clone();
-    let num_threads = 2;
-    let num = 10_000;
-    c.bench_function("create 10k 2 threads", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            black_box(u!(s));
-                        }
-                        tx2.send(()).unwrap();
+        let s = blns.clone();
+        c.bench_function(
+            &format!("blns string-interner x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                let interner = spin::Mutex::new(StringInterner::default());
+                scope(|scope| {
+                    for _ in 0..num_threads {
+                        scope.spawn(|_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().cycle().take(num) {
+                                    let mut int = interner.lock();
+                                    black_box(int.get_or_intern(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
                     }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    c.bench_function("create 10k 2 threads string interner", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        let interner = spin::Mutex::new(StringInterner::default());
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            let mut int = interner.lock();
-                            black_box(int.get_or_intern(s));
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
                         }
-                        tx2.send(()).unwrap();
-                    }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    c.bench_function("create 10k 2 threads string-cache", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            black_box(DefaultAtom::from(s.as_str()));
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
                         }
-                        tx2.send(()).unwrap();
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+
+        let s = blns.clone();
+        c.bench_function(
+            &format!("blns string-cache x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                scope(|scope| {
+                    for _ in 0..num_threads {
+                        scope.spawn(|_| {
+                            while rx1.recv().is_ok() {
+                                let mut v = Vec::with_capacity(num);
+                                for s in s.iter().cycle().take(num) {
+                                    v.push(DefaultAtom::from(s.as_str()));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
                     }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    c.bench_function("create 10k 2 threads String::from", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            black_box(String::from(s));
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
                         }
-                        tx2.send(()).unwrap();
-                    }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    let num_threads = 4;
-    let num = 10_000;
-    c.bench_function("create 10k 4 threads", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            black_box(u!(s));
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
                         }
-                        tx2.send(()).unwrap();
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+
+        let s = blns.clone();
+        c.bench_function(
+            &format!("blns String::from x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                scope(|scope| {
+                    for _ in 0..num_threads {
+                        scope.spawn(|_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().cycle().take(num) {
+                                    black_box(String::from(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
                     }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    c.bench_function("create 10k 4 threads string interner", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        let interner = spin::Mutex::new(StringInterner::default());
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            let mut int = interner.lock();
-                            black_box(int.get_or_intern(s));
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
                         }
-                        tx2.send(()).unwrap();
-                    }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
-
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
-
-    let s = blns.clone();
-    c.bench_function("create 10k 4 threads String::from", move |b| {
-        let (tx1, rx1) = bounded(0);
-        let (tx2, rx2) = bounded(0);
-        scope(|scope| {
-            for _ in 0..num_threads {
-                scope.spawn(|_| {
-                    while rx1.recv().is_ok() {
-                        for s in s.iter().cycle().take(num) {
-                            black_box(String::from(s));
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
                         }
-                        tx2.send(()).unwrap();
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+    }
+
+    for num_threads in [1, 2, 4, 6, 8, 12].iter() {
+        let num_threads = *num_threads;
+
+        let s = Arc::clone(&raft);
+
+        c.bench_function(
+            &format!("raft ustring x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                let s = Arc::clone(&s);
+                scope(|scope| {
+                    for tt in 0..num_threads {
+                        let t = tt;
+                        let rx1 = rx1.clone();
+                        let tx2 = tx2.clone();
+                        let s = Arc::clone(&s);
+                        scope.spawn(move |_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().skip(t * 1000).take(1000) {
+                                    black_box(u!(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
                     }
-                });
-            }
 
-            b.iter(|| {
-                for _ in 0..num_threads {
-                    tx1.send(()).unwrap();
-                }
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
 
-                for _ in 0..num_threads {
-                    rx2.recv().unwrap();
-                }
-            });
-            drop(tx1);
-        })
-        .unwrap();
-    });
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
+                        }
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+
+        let s = Arc::clone(&raft);
+        c.bench_function(
+            &format!("raft string-interner x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                let interner = Arc::new(spin::Mutex::new(StringInterner::default()));
+                scope(|scope| {
+                    for tt in 0..num_threads {
+                        let t = tt;
+                        let rx1 = rx1.clone();
+                        let tx2 = tx2.clone();
+                        let s = Arc::clone(&s);
+                        let interner = Arc::clone(&interner);
+                        scope.spawn(move |_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().skip(t * 1000).take(1000) {
+                                    let mut int = interner.lock();
+                                    black_box(int.get_or_intern(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
+                    }
+
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
+
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
+                        }
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+
+        let s = Arc::clone(&raft);
+        c.bench_function(
+            &format!("raft string-cache x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                scope(|scope| {
+                    for tt in 0..num_threads {
+                        let t = tt;
+                        let rx1 = rx1.clone();
+                        let tx2 = tx2.clone();
+                        let s = Arc::clone(&s);
+                        scope.spawn(move |_| {
+                            while rx1.recv().is_ok() {
+                                let mut v = Vec::with_capacity(1000);
+                                for s in s.iter().skip(t * 1000).take(1000) {
+                                    v.push(DefaultAtom::from(s.as_str()));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
+                    }
+
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
+
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
+                        }
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+
+        let s = Arc::clone(&raft);
+        c.bench_function(
+            &format!("raft String::from x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                scope(|scope| {
+                    for tt in 0..num_threads {
+                        let t = tt;
+                        let rx1 = rx1.clone();
+                        let tx2 = tx2.clone();
+                        let s = Arc::clone(&s);
+                        scope.spawn(move |_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().skip(t * 1000).take(1000) {
+                                    black_box(String::from(s));
+                                }
+                                tx2.send(()).unwrap();
+                            }
+                        });
+                    }
+
+                    b.iter(|| {
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
+
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
+                        }
+                    });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);

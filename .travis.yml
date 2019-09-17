@@ -1,0 +1,9 @@
+dist: xenial
+
+language: rust
+
+rust:
+  - nightly
+
+script:
+  - cargo test --verbose --all
