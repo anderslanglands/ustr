@@ -14,7 +14,8 @@
 //! ```rust
 //! use ustring::{UString, u};
 //!
-//! // Creation is quick and easy using either `UString::from` or the `u!` macro and only one copy of any string is stored
+//! // Creation is quick and easy using either `UString::from` or the `u!` macro
+//! // and only one copy of any string is stored
 //! let h1 = UString::from("hello");
 //! let h2 = u!("hello");
 //!

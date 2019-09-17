@@ -35,7 +35,7 @@ pub(crate) struct StringCache {
     num_entries: usize,
     mask: usize,
     total_allocated: usize,
-    pad: u32,
+    _pad: u32,
 }
 
 // TODO: make these configurable?
@@ -68,7 +68,7 @@ impl StringCache {
             num_entries: 0,
             mask: capacity - 1,
             total_allocated: capacity,
-            pad: 0,
+            _pad: 0,
         }
     }
 

@@ -25,7 +25,7 @@ assert_eq!(h2, h3);
 
 // You can pass straight to FFI
 let len = unsafe {
-libc::strlen(h1.as_c_str())
+    libc::strlen(h1.as_c_str())
 };
 assert_eq!(len, 5);
 ```
