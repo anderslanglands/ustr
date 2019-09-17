@@ -1,11 +1,11 @@
 # UString
 Fast, FFI-friendly string interning. A `UString` is a lightweight handle representing an entry in a global string cache, allowing for: 
-* Extremely fast string comparisons - it's just a pointer comparison.
-* Amortized storage -  only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
+* Extremely fast string assignment and comparisons 
+* Amortized storage. Only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
 * Fast hashing - the precomputed hash is stored with the string
 * Fast FFI - the string is stored with a terminating null byte so can be passed to C directly without doing the CString dance.
 
-The downside is no strings are ever freed, so if you're creating lots and lots of strings, you might run out of memory. On the other hand, War and Peace
+The downside is no strings are ever freed, so if you're creating lots and lots of strings, you might run out of memory. On the other hand, *War and Peace*
 is only 3MB, so it's probably fine. 
 
 This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oiio/blob/master/src/include/OpenImageIO/ustring.h) but it is NOT binary-compatible (yet). The underlying hash map implementation is directy ported from OIIO.
