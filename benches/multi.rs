@@ -6,7 +6,7 @@ use crossbeam_channel::bounded;
 use crossbeam_utils::thread::scope;
 use std::sync::Arc;
 
-use ustring::*;
+use ustr::*;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())

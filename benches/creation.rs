@@ -8,7 +8,7 @@ use std::sync::Arc;
 use string_cache::DefaultAtom;
 use string_interner::StringInterner;
 
-use ustring::*;
+use ustr::*;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -43,54 +43,39 @@ fn criterion_benchmark(c: &mut Criterion) {
         println!("{}", s);
     }
 
-    /*
-    // there are 1315 unique tokens in blns.txt, so this will find an already-existing
-    // string ~7.6 times for every string created
-    // ~14ns
-    let s = blns.clone();
-    c.bench_function("create 10k", move |b| {
-        let s = s.clone();
-        b.iter(|| {
-            create_ustrings(&(*s), 10_000);
-        });
-    });
-    */
-
     let num = 4_000;
     for num_threads in [1, 2, 4, 6, 8, 12].iter() {
         let num_threads = *num_threads;
         let s = blns.clone();
-        c.bench_function(
-            &format!("blns ustring x {} threads", num_threads),
-            move |b| {
-                let (tx1, rx1) = bounded(0);
-                let (tx2, rx2) = bounded(0);
-                scope(|scope| {
-                    for _ in 0..num_threads {
-                        scope.spawn(|_| {
-                            while rx1.recv().is_ok() {
-                                for s in s.iter().cycle().take(num) {
-                                    black_box(u!(s));
-                                }
-                                tx2.send(()).unwrap();
+        c.bench_function(&format!("blns ustr x {} threads", num_threads), move |b| {
+            let (tx1, rx1) = bounded(0);
+            let (tx2, rx2) = bounded(0);
+            ustr::_clear_cache();
+            scope(|scope| {
+                for _ in 0..num_threads {
+                    scope.spawn(|_| {
+                        while rx1.recv().is_ok() {
+                            for s in s.iter().cycle().take(num) {
+                                black_box(u!(s));
                             }
-                        });
-                    }
-
-                    b.iter(|| {
-                        for _ in 0..num_threads {
-                            tx1.send(()).unwrap();
-                        }
-
-                        for _ in 0..num_threads {
-                            rx2.recv().unwrap();
+                            tx2.send(()).unwrap();
                         }
                     });
-                    drop(tx1);
-                })
-                .unwrap();
-            },
-        );
+                }
+
+                b.iter(|| {
+                    for _ in 0..num_threads {
+                        tx1.send(()).unwrap();
+                    }
+
+                    for _ in 0..num_threads {
+                        rx2.recv().unwrap();
+                    }
+                });
+                drop(tx1);
+            })
+            .unwrap();
+        });
 
         let s = blns.clone();
         c.bench_function(
@@ -200,42 +185,40 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let s = Arc::clone(&raft);
 
-        c.bench_function(
-            &format!("raft ustring x {} threads", num_threads),
-            move |b| {
-                let (tx1, rx1) = bounded(0);
-                let (tx2, rx2) = bounded(0);
-                let s = Arc::clone(&s);
-                scope(|scope| {
-                    for tt in 0..num_threads {
-                        let t = tt;
-                        let rx1 = rx1.clone();
-                        let tx2 = tx2.clone();
-                        let s = Arc::clone(&s);
-                        scope.spawn(move |_| {
-                            while rx1.recv().is_ok() {
-                                for s in s.iter().skip(t * 1000).take(1000) {
-                                    black_box(u!(s));
-                                }
-                                tx2.send(()).unwrap();
+        c.bench_function(&format!("raft ustr x {} threads", num_threads), move |b| {
+            let (tx1, rx1) = bounded(0);
+            let (tx2, rx2) = bounded(0);
+            let s = Arc::clone(&s);
+            scope(|scope| {
+                ustr::_clear_cache();
+                for tt in 0..num_threads {
+                    let t = tt;
+                    let rx1 = rx1.clone();
+                    let tx2 = tx2.clone();
+                    let s = Arc::clone(&s);
+                    scope.spawn(move |_| {
+                        while rx1.recv().is_ok() {
+                            for s in s.iter().skip(t * 1000).take(1000) {
+                                black_box(u!(s));
                             }
-                        });
-                    }
-
-                    b.iter(|| {
-                        for _ in 0..num_threads {
-                            tx1.send(()).unwrap();
-                        }
-
-                        for _ in 0..num_threads {
-                            rx2.recv().unwrap();
+                            tx2.send(()).unwrap();
                         }
                     });
-                    drop(tx1);
-                })
-                .unwrap();
-            },
-        );
+                }
+
+                b.iter(|| {
+                    for _ in 0..num_threads {
+                        tx1.send(()).unwrap();
+                    }
+
+                    for _ in 0..num_threads {
+                        rx2.recv().unwrap();
+                    }
+                });
+                drop(tx1);
+            })
+            .unwrap();
+        });
 
         let s = Arc::clone(&raft);
         c.bench_function(

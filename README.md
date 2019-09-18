@@ -1,7 +1,7 @@
-# UString
-Fast, FFI-friendly string interning. A `UString` is a lightweight handle representing an entry in a global string cache, allowing for: 
+# Ustr
+Fast, FFI-friendly string interning. A `Ustr` (**U**nique **str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for: 
 * Extremely fast string assignment and comparisons 
-* Amortized storage. Only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
+* Efficient storage. Only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
 * Fast hashing - the precomputed hash is stored with the string
 * Fast FFI - the string is stored with a terminating null byte so can be passed to C directly without doing the CString dance.
 
@@ -13,10 +13,10 @@ This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oi
 # Usage
 
 ```rust
-use ustring::{UString, u};
+use ustr::{Ustr, u};
 
-// Creation is quick and easy using either `UString::from` or the `u!` macro and only one copy of any string is stored
-let h1 = UString::from("hello");
+// Creation is quick and easy using either `Ustr::from` or the `u!` macro and only one copy of any string is stored
+let h1 = Ustr::from("hello");
 let h2 = u!("hello");
 
 // Comparisons and copies are extremely cheap
@@ -31,45 +31,37 @@ assert_eq!(len, 5);
 ```
 
 # Compared to string-cache
-[string-cache](https://github.com/servo/string-cache) provides a global cache that can be created at compile time as well as at run time. Dynamic strings in the cache appear to be reference-counted so will be freed when they are no longer used, while `UString`s are never deleted. 
+[string-cache](https://github.com/servo/string-cache) provides a global cache that can be created at compile time as well as at run time. Dynamic strings in the cache appear to be reference-counted so will be freed when they are no longer used, while `Ustr`s are never deleted. 
 
-Creating a `string_cache::DefaultAtom` is much slower than creating a `UString`, especially in a multi-threaded context. On the other hand if you can just bake all your `Atom`s into your binary at compile-time this wouldn't be an issue. 
+Creating a `string_cache::DefaultAtom` is much slower than creating a `Ustr`, especially in a multi-threaded context. On the other hand if you can just bake all your `Atom`s into your binary at compile-time this wouldn't be an issue. 
 
 # Compared to string-interner
-[string-interner](https://github.com/robbepop/string-interner) gives you individual `Interner` objects to work with rather than a global cache, which could be more flexible. It's faster to create than string-cache but still significantly slower than `UString`. 
+[string-interner](https://github.com/robbepop/string-interner) gives you individual `Interner` objects to work with rather than a global cache, which could be more flexible. It's faster to create than string-cache but still significantly slower than `Ustr`. 
 
 # Speed
-UStrings are significantly faster to create than string-interner or string-cache. Creating 4000 cycled copies of the 1315 strings in the Big List of Naughty Strings: 
+Ustrs are significantly faster to create than string-interner or string-cache. Creating 4000 cycled copies of the 1315 strings in the Big List of Naughty Strings: 
 ![blns bench](ustring_bench_blns.png)
-
-Creating 1000 unique strings per thread (so no duplicates) of concatenated paths of the form:
-```
-cgi-bin/images/admin
-includes/modules/templates
-cache/media/js
-```
-![raft bench](ustring_bench_raft.png)
 
 # Testing
 Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache.
 
 # Why?
-It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation - Compared to standard strings, `UString`s have several advantages:
+It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation - Compared to standard strings, `Ustr`s have several advantages:
 
-- Each individual `UString` is very small -- in fact, we guarantee that a `UString` is the same size and memory layout as an ordinary *u8.
+- Each individual `Ustr` is very small -- in fact, we guarantee that a `Ustr` is the same size and memory layout as an ordinary *u8.
 - Storage is frugal, since there is only one allocated copy of each unique character sequence, throughout the lifetime of the program.
-- Assignment from one `UString` to another is just copy of the pointer; no allocation, no character copying, no reference counting.
+- Assignment from one `Ustr` to another is just copy of the pointer; no allocation, no character copying, no reference counting.
 - Equality testing (do the strings contain the same characters) is a single operation, the comparison of the pointer.
-- Memory allocation only occurs when a new `UString` is constructed from raw characters the FIRST time -- subsequent constructions of the same string just finds it in the canonial string set, but doesn't need to allocate new storage.  Destruction of a `UString` is trivial, there is no de-allocation because the canonical version stays in the set.  Also, therefore, no user code mistake can lead to memory leaks.
+- Memory allocation only occurs when a new `Ustr` is constructed from raw characters the FIRST time -- subsequent constructions of the same string just finds it in the canonial string set, but doesn't need to allocate new storage.  Destruction of a `Ustr` is trivial, there is no de-allocation because the canonical version stays in the set.  Also, therefore, no user code mistake can lead to memory leaks.
 
-But there are some problems, too.  Canonical strings are never freed from the table.  So in some sense all the strings "leak", but they only leak one copy for each unique string that the program ever comes across. Creating a `UString` is roughly equivalent to `String::from()` on a single thread, but performance will be worse if trying to create many `UString`s in tight loops from multiple threads due to lock contention for the global cache.
+But there are some problems, too.  Canonical strings are never freed from the table.  So in some sense all the strings "leak", but they only leak one copy for each unique string that the program ever comes across. Creating a `Ustr` is roughly equivalent to `String::from()` on a single thread, but performance will be worse if trying to create many `Ustr`s in tight loops from multiple threads due to lock contention for the global cache.
 
-On the whole, `UString`s are a really great string representation
+On the whole, `Ustr`s are a really great string representation
 - if you tend to have (relatively) few unique strings, but many copies of those strings;
 - if you tend to make the same strings over and over again, and if it's relatively rare that a single unique character sequence is used only once in the entire lifetime of the program; - if your most common string operations are assignment and equality testing and you want them to be as fast as possible;
 - if you are doing relatively little character-by-character assembly of strings, string concatenation, or other "string manipulation" (other than equality testing).
 
-`UString`s are not so hot:
+`Ustr`s are not so hot:
 - if your program tends to have very few copies of each character sequence over the entire lifetime of the program;
 - if your program tends to generate a huge variety of unique strings over its lifetime, each of which is used only a short time and then discarded, never to be needed again;
 - if you don't need to do a lot of string assignment or equality testing, but lots of more complex string manipulation.

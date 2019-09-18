@@ -1,6 +1,6 @@
-//! Fast, FFI-friendly string interning. A `UString` is a lightweight handle representing an entry in a global string cache, allowing for:
-//! * Extremely fast string comparisons - it's just a pointer comparison.
-//! * Amortized storage -  only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
+//! Fast, FFI-friendly string interning. A `Ustr` (**U**nique **Str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for:
+//! * Extremely fast string assignment and comparisons - it's just a pointer comparison.
+//! * Efficient storage -  only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
 //! * Fast hashing - the precomputed hash is stored with the string
 //! * Fast FFI - the string is stored with a terminating null byte so can be passed to C directly without doing the CString dance.
 //!
@@ -12,11 +12,11 @@
 //! # Usage
 //!
 //! ```rust
-//! use ustring::{UString, u};
+//! use ustr::{Ustr, u};
 //!
-//! // Creation is quick and easy using either `UString::from` or the `u!` macro
+//! // Creation is quick and easy using either `Ustr::from` or the `u!` macro
 //! // and only one copy of any string is stored
-//! let h1 = UString::from("hello");
+//! let h1 = Ustr::from("hello");
 //! let h2 = u!("hello");
 //!
 //! // Comparisons and copies are extremely cheap
@@ -33,32 +33,32 @@
 //! ## Why?
 //! It is common in certain types of applications to use strings as identifiers,
 //! but not really do any processing with them.
-//! To paraphrase from OIIO's ustring documentation -
-//! Compared to standard strings, ustrings have several advantages:
+//! To paraphrase from OIIO's Ustring documentation -
+//! Compared to standard strings, Ustrs have several advantages:
 //!
-//!   - Each individual ustring is very small -- in fact, we guarantee that
-//!     a ustring is the same size and memory layout as an ordinary *u8.
+//!   - Each individual Ustr is very small -- in fact, we guarantee that
+//!     a Ustr is the same size and memory layout as an ordinary *u8.
 //!   - Storage is frugal, since there is only one allocated copy of each
 //!     unique character sequence, throughout the lifetime of the program.
-//!   - Assignment from one ustring to another is just copy of the pointer;
+//!   - Assignment from one Ustr to another is just copy of the pointer;
 //!     no allocation, no character copying, no reference counting.
 //!   - Equality testing (do the strings contain the same characters) is
 //!     a single operation, the comparison of the pointer.
-//!   - Memory allocation only occurs when a new ustring is constructed from
+//!   - Memory allocation only occurs when a new Ustr is constructed from
 //!     raw characters the FIRST time -- subsequent constructions of the
 //!     same string just finds it in the canonial string set, but doesn't
-//!     need to allocate new storage.  Destruction of a ustring is trivial,
+//!     need to allocate new storage.  Destruction of a Ustr is trivial,
 //!     there is no de-allocation because the canonical version stays in
 //!     the set.  Also, therefore, no user code mistake can lead to
 //!     memory leaks.
-//!   - Creating a new UString is faster than String::from()
+//!   - Creating a new Ustr is faster than String::from()
 //!
 //! But there are some problems, too.  Canonical strings are never freed
 //! from the table.  So in some sense all the strings "leak", but they
 //! only leak one copy for each unique string that the program ever comes
 //! across.
 //!
-//! On the whole, ustrings are a really great string representation
+//! On the whole, Ustrs are a really great string representation
 //!   - if you tend to have (relatively) few unique strings, but many
 //!     copies of those strings;
 //!   - if the creation of strings from raw characters is relatively
@@ -72,7 +72,7 @@
 //!     of strings, string concatenation, or other "string manipulation"
 //!     (other than equality testing).
 //!
-//! ustrings are not so hot
+//! Ustrs are not so hot
 //!   - if your program tends to have very few copies of each character
 //!     sequence over the entire lifetime of the program;
 //!   - if your program tends to generate a huge variety of unique
@@ -133,11 +133,11 @@ lazy_static::lazy_static! {
 
 /// A handle representing a string in the global string cache.
 ///
-/// To use, create one using `UString::from` or the `u!` macro. You can freely
-/// copy, destroy or send UStrings to other threads: the underlying string is
+/// To use, create one using `Ustr::from` or the `u!` macro. You can freely
+/// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
-pub struct UString {
+pub struct Ustr {
     char_ptr: *const u8,
 }
 
@@ -147,21 +147,21 @@ fn whichbin(hash: u64) -> usize {
     ((hash >> TOP_SHIFT as u64) % NUM_BINS as u64) as usize
 }
 
-impl UString {
-    /// Create a new UString from the given &str.
+impl Ustr {
+    /// Create a new Ustr from the given &str.
     ///
     /// You can also use the `u!` macro as a shorthand
     /// ```
-    /// use ustring::{UString, u};
+    /// use ustr::{Ustr, u};
     ///
-    /// let u1 = UString::from("constant-time comparisons rule");
+    /// let u1 = Ustr::from("constant-time comparisons rule");
     /// let u2 = u!("constant-time comparisons rule");
     /// assert_eq!(u1, u2);
     /// ```
-    pub fn from(string: &str) -> UString {
+    pub fn from(string: &str) -> Ustr {
         let hash = fasthash::city::hash64(string.as_bytes());
         let mut sc = STRING_CACHE[whichbin(hash)].lock();
-        UString {
+        Ustr {
             char_ptr: sc.insert(string, hash),
         }
     }
@@ -173,7 +173,7 @@ impl UString {
         // 2) len is a usize stored usize aligned usize bytes before char_ptr
         // 3) char_ptr points to a valid UTF-8 string of len bytes.
         // All these are guaranteed by StringCache::insert() and by the fact
-        // we can only construct a UString from a valid &str.
+        // we can only construct a Ustr from a valid &str.
         unsafe {
             let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -215,43 +215,43 @@ impl UString {
 // We're safe to impl these because the strings they reference are immutable
 // and for all intents and purposes 'static since they're never deleted after
 // being created
-unsafe impl Send for UString {}
-unsafe impl Sync for UString {}
+unsafe impl Send for Ustr {}
+unsafe impl Sync for Ustr {}
 
-impl PartialEq<&str> for UString {
+impl PartialEq<&str> for Ustr {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
     }
 }
 
-impl PartialEq<String> for UString {
+impl PartialEq<String> for Ustr {
     fn eq(&self, other: &String) -> bool {
         self.as_str() == other
     }
 }
 
-impl AsRef<str> for UString {
+impl AsRef<str> for Ustr {
     fn as_ref(&self) -> &str {
         self.as_str()
     }
 }
 
-impl fmt::Display for UString {
+impl fmt::Display for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl fmt::Debug for UString {
+impl fmt::Debug for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "u!(\"{}\")", self.as_str())
     }
 }
 
-/// Shorthand macro for creating a UString.
+/// Shorthand macro for creating a Ustr.
 ///
 /// ```
-/// use ustring::{u, UString};
+/// use ustr::{u, Ustr};
 /// let u_hello = u!("Hello");
 /// let u_world = u!("world");
 /// println!("{}, {}!", u_hello, u_world);
@@ -260,7 +260,7 @@ impl fmt::Debug for UString {
 #[macro_export]
 macro_rules! u {
     ($s:expr) => {
-        UString::from($s);
+        Ustr::from($s);
     };
 }
 
@@ -288,11 +288,11 @@ pub fn total_allocated() -> usize {
 /// concurrently.
 ///
 /// ```
-/// use ustring::{u, UString};
+/// use ustr::{u, Ustr};
 ///
 /// let _ = u!("Hello");
 /// let _ = u!(", World!");
-/// assert_eq!(ustring::num_entries(), 2);
+/// assert_eq!(ustr::num_entries(), 2);
 /// ```
 pub fn num_entries() -> usize {
     STRING_CACHE.iter().map(|sc| sc.lock().num_entries()).sum()
@@ -339,7 +339,7 @@ pub fn string_cache_iter() -> StringCacheIterator {
 mod tests {
     #[test]
     fn it_works() {
-        use super::UString;
+        use super::Ustr;
 
         let u_hello = u!("hello");
         assert_eq!(u_hello, "hello");
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn c_str_works() {
-        use super::UString;
+        use super::Ustr;
         use std::ffi::CStr;
 
         let s_fox = "The quick brown fox jumps over the lazy dog.";
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn blns() {
-        use super::{string_cache_iter, UString};
+        use super::{string_cache_iter, Ustr};
         use std::collections::HashSet;
 
         // clear the cache first or our results will be wrong
