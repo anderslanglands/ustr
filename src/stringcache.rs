@@ -107,7 +107,7 @@ impl StringCache {
 
             // keep looking
             dist += 1;
-            pos = (pos + dist * dist) & self.mask;
+            pos = (pos + dist) & self.mask;
         }
 
         // insert the new string
@@ -185,7 +185,7 @@ impl StringCache {
                 }
 
                 dist += 1;
-                pos = (pos + dist * dist) & new_mask;
+                pos = (pos + dist) & new_mask;
             }
 
             new_entries[pos] = *e;
@@ -201,7 +201,7 @@ impl StringCache {
 
     pub(crate) unsafe fn clear(&mut self) {
         // just zero all the pointers that have already been set
-        std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.num_entries);
+        std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
         self.num_entries = 0;
         for a in self.old_allocs.iter_mut() {
             a.clear();
