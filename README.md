@@ -39,8 +39,8 @@ Creating a `string_cache::DefaultAtom` is much slower than creating a `Ustr`, es
 [string-interner](https://github.com/robbepop/string-interner) gives you individual `Interner` objects to work with rather than a global cache, which could be more flexible. It's faster to create than string-cache but still significantly slower than `Ustr`. 
 
 # Speed
-Ustrs are significantly faster to create than string-interner or string-cache. Creating 4000 cycled copies of the 1315 strings in the Big List of Naughty Strings: 
-![blns bench](ustring_bench_blns.png)
+Ustrs are significantly faster to create than string-interner or string-cache. Creating 100,000 cycled copies of ~20,000 path strings:
+![raft bench](ustring_bench_raft.png)
 
 # Testing
 Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache.

@@ -4,8 +4,7 @@ version = "0.1.0"
 authors = ["Anders Langlands <anderslanglands@gmail.com>"]
 edition = "2018"
 license = "BSD+"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Fast, FFI-friendly string interning."
 
 [dependencies]
 lazy_static = "1.4.0"
@@ -22,10 +21,6 @@ libc = "0.2.62"
 
 [[bench]]
 name="creation"
-harness=false
-
-[[bench]]
-name="multi"
 harness=false
 
 # [profile.release]
