@@ -53,7 +53,9 @@ Ustrs are significantly faster to create than string-interner or string-cache. C
 Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache.
 
 # Why?
-It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation - Compared to standard strings, `Ustr`s have several advantages:
+It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation...
+
+Compared to standard strings, `Ustr`s have several advantages:
 
 - Each individual `Ustr` is very small -- in fact, we guarantee that a `Ustr` is the same size and memory layout as an ordinary *u8.
 - Storage is frugal, since there is only one allocated copy of each unique character sequence, throughout the lifetime of the program.
@@ -61,7 +63,7 @@ It is common in certain types of applications to use strings as identifiers, but
 - Equality testing (do the strings contain the same characters) is a single operation, the comparison of the pointer.
 - Memory allocation only occurs when a new `Ustr` is constructed from raw characters the FIRST time -- subsequent constructions of the same string just finds it in the canonial string set, but doesn't need to allocate new storage.  Destruction of a `Ustr` is trivial, there is no de-allocation because the canonical version stays in the set.  Also, therefore, no user code mistake can lead to memory leaks.
 
-But there are some problems, too.  Canonical strings are never freed from the table.  So in some sense all the strings "leak", but they only leak one copy for each unique string that the program ever comes across. Creating a `Ustr` is roughly equivalent to `String::from()` on a single thread, but performance will be worse if trying to create many `Ustr`s in tight loops from multiple threads due to lock contention for the global cache.
+But there are some problems, too.  Canonical strings are never freed from the table.  So in some sense all the strings "leak", but they only leak one copy for each unique string that the program ever comes across. Creating a `Ustr` is slower than `String::from()` on a single thread, and performance will be worse if trying to create many `Ustr`s in tight loops from multiple threads due to lock contention for the global cache.
 
 On the whole, `Ustr`s are a really great string representation
 - if you tend to have (relatively) few unique strings, but many copies of those strings;
