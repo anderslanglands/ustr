@@ -91,44 +91,6 @@ mod stringcache;
 pub use stringcache::*;
 mod bumpalloc;
 
-lazy_static::lazy_static! {
-    // There's got to be a better way of doing this - macro?
-    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = [
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-    ];
-}
-
 /// A handle representing a string in the global string cache.
 ///
 /// To use, create one using `Ustr::from` or the `u!` macro. You can freely
@@ -137,12 +99,6 @@ lazy_static::lazy_static! {
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub struct Ustr {
     char_ptr: *const u8,
-}
-
-// Use the top bits of the hash to choose a bin
-#[inline]
-fn whichbin(hash: u64) -> usize {
-    ((hash >> TOP_SHIFT as u64) % NUM_BINS as u64) as usize
 }
 
 impl Ustr {
@@ -201,6 +157,17 @@ impl Ustr {
         unsafe {
             let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
             std::ptr::read(len_ptr)
+        }
+    }
+
+    /// Get the precomputed hash for this string
+    pub fn precomputed_hash(&self) -> u64 {
+        // This is safe if:
+        // 1) hash is a u64 stored 2*u64 aligned usize bytes before char_ptr
+        // This is guaranteed by StringCache::insert()
+        unsafe {
+            let hash_ptr = (self.char_ptr as *const u64).offset(-2isize);
+            std::ptr::read(hash_ptr)
         }
     }
 
@@ -410,4 +377,81 @@ mod tests {
         let nbs = super::num_entries_per_bin();
         println!("{:?}", nbs);
     }
+
+    #[test]
+    fn raft() {
+        use super::{u, Ustr};
+        use std::sync::Arc;
+
+        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("data")
+            .join("raft-large-directories.txt");
+        let raft = std::fs::read_to_string(path).unwrap();
+        let raft = Arc::new(
+            raft.split_whitespace()
+                .collect::<Vec<_>>()
+                .chunks(3)
+                .map(|s| {
+                    if s.len() == 3 {
+                        format!("{}/{}/{}", s[0], s[1], s[2])
+                    } else {
+                        s[0].to_owned()
+                    }
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        let s = raft.clone();
+        for _ in 0..600 {
+            let mut v = Vec::with_capacity(20_000);
+            super::_clear_cache();
+            for s in s.iter().cycle().take(20_000) {
+                v.push(u!(s));
+            }
+        }
+    }
+}
+
+lazy_static::lazy_static! {
+    // There's got to be a better way of doing this - macro?
+    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = [
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+        Mutex::new(StringCache::new()),
+    ];
+}
+
+// Use the top bits of the hash to choose a bin
+#[inline]
+fn whichbin(hash: u64) -> usize {
+    ((hash >> TOP_SHIFT as u64) % NUM_BINS as u64) as usize
 }
