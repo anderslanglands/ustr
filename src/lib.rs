@@ -84,8 +84,6 @@
 //! ## Safety and Compatibility
 //! This crate has been tested (a little) on x86_64 ONLY. It might well do
 //! horrible, horrible things on other architectures.
-
-#![feature(allocator_api)]
 use spin::Mutex;
 use std::fmt;
 

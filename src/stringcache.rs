@@ -203,7 +203,11 @@ impl StringCache {
         // just zero all the pointers that have already been set
         std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.num_entries);
         self.num_entries = 0;
+        for a in self.old_allocs.iter_mut() {
+            a.clear();
+        }
         self.old_allocs.clear();
+        self.alloc.clear();
         self.alloc = LeakyBumpAlloc::new(
             INITIAL_ALLOC / NUM_BINS,
             std::mem::align_of::<StringCacheEntry>(),
