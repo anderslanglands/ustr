@@ -22,7 +22,3 @@ libc = "0.2.62"
 [[bench]]
 name="creation"
 harness=false
-
-# [profile.release]
-# debug=true
-# lto=false
