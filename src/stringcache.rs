@@ -221,22 +221,6 @@ impl StringCache {
     pub(crate) fn num_entries(&self) -> usize {
         self.num_entries
     }
-
-    // Get an iterator over all strings in the cache
-    pub fn iter(&self) -> StringCacheIterator {
-        let mut allocs = self
-            .old_allocs
-            .iter()
-            .map(|a| (a.start(), a.end()))
-            .collect::<Vec<_>>();
-        allocs.push((self.alloc.start(), self.alloc.end()));
-        let current_ptr = allocs[0].0;
-        StringCacheIterator {
-            allocs,
-            current_alloc: 0,
-            current_ptr,
-        }
-    }
 }
 
 // We're OK to send the StringCache (not that we will, but we need it for the

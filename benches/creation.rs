@@ -13,16 +13,6 @@ use ustr::*;
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("data")
-        .join("blns.txt");
-    let blns = std::fs::read_to_string(path).unwrap();
-    let blns = Arc::new(
-        blns.split_whitespace()
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>(),
-    );
-
-    let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("data")
         .join("raft-large-directories.txt");
     let raft = std::fs::read_to_string(path).unwrap();
     let raft = Arc::new(
@@ -42,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let s = raft.clone();
     c.bench_function("single raft ustr", move |b| {
         b.iter(|| {
-            ustr::_clear_cache();
+            unsafe { ustr::_clear_cache() };
             for s in s.iter().cycle().take(100_000) {
                 black_box(u!(s));
             }
@@ -106,7 +96,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 }
 
                 b.iter(|| {
-                    ustr::_clear_cache();
+                    unsafe { ustr::_clear_cache() };
                     for _ in 0..num_threads {
                         tx1.send(()).unwrap();
                     }

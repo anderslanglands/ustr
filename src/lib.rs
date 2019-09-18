@@ -14,20 +14,25 @@
 //! ```rust
 //! use ustr::{Ustr, u};
 //!
+//! # unsafe { ustr::_clear_cache() };
 //! // Creation is quick and easy using either `Ustr::from` or the `u!` macro
 //! // and only one copy of any string is stored
-//! let h1 = Ustr::from("hello");
-//! let h2 = u!("hello");
+//! let u1 = Ustr::from("the quick brown fox");
+//! let u2 = u!("the quick brown fox");
 //!
 //! // Comparisons and copies are extremely cheap
-//! let h3 = h1;
-//! assert_eq!(h2, h3);
+//! let u3 = u1;
+//! assert_eq!(u2, u3);
 //!
 //! // You can pass straight to FFI
 //! let len = unsafe {
-//!     libc::strlen(h1.as_c_str())
+//!     libc::strlen(u1.as_c_str())
 //! };
-//! assert_eq!(len, 5);
+//! assert_eq!(len, 19);
+//!
+//! // Use as_str() to get a &str
+//! let words: Vec<&str> = u1.as_str().split_whitespace().collect();
+//! assert_eq!(words, ["the", "quick", "brown", "fox"]);
 //! ```
 //!
 //! ## Why?
@@ -229,13 +234,18 @@ macro_rules! u {
     };
 }
 
-// Clears the hash map. Used for benchmarking purposes. Do not call this.
+/// DO NOT CALL THIS.
+///
+/// Clears the cache - used for benchmarking and testing purposes to clear the
+/// cache. Calling this will invalidate any previously created `UStr`s and
+/// probably cause your house to burn down. DO NOT CALL THIS.
+///
+/// # Safety
+/// DO NOT CALL THIS.
 #[doc(hidden)]
-pub fn _clear_cache() {
-    unsafe {
-        for m in STRING_CACHE.iter() {
-            m.lock().clear();
-        }
+pub unsafe fn _clear_cache() {
+    for m in STRING_CACHE.iter() {
+        m.lock().clear();
     }
 }
 
@@ -340,7 +350,7 @@ mod tests {
         use std::collections::HashSet;
 
         // clear the cache first or our results will be wrong
-        super::_clear_cache();
+        unsafe { super::_clear_cache() };
 
         let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("data")
@@ -404,7 +414,7 @@ mod tests {
         let s = raft.clone();
         for _ in 0..600 {
             let mut v = Vec::with_capacity(20_000);
-            super::_clear_cache();
+            unsafe { super::_clear_cache() };
             for s in s.iter().cycle().take(20_000) {
                 v.push(u!(s));
             }
