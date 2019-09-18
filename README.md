@@ -39,7 +39,14 @@ Creating a `string_cache::DefaultAtom` is much slower than creating a `Ustr`, es
 [string-interner](https://github.com/robbepop/string-interner) gives you individual `Interner` objects to work with rather than a global cache, which could be more flexible. It's faster to create than string-cache but still significantly slower than `Ustr`. 
 
 # Speed
-Ustrs are significantly faster to create than string-interner or string-cache. Creating 100,000 cycled copies of ~20,000 path strings:
+Ustrs are significantly faster to create than string-interner or string-cache. Creating 100,000 cycled copies of ~20,000 path strings of the form:
+```
+/cgi-bin/images/admin
+/modules/templates/cache
+/libraries/themes/wp-includes
+...etc.
+```
+
 ![raft bench](ustring_bench_raft.png)
 
 # Testing
