@@ -3,7 +3,7 @@ dist: xenial
 language: rust
 
 rust:
-  - nightly
+  - stable
 
 script:
   - env RUST_TEST_THREADS=1 cargo test --verbose --all
