@@ -223,8 +223,7 @@ impl StringCache {
     }
 }
 
-// We're OK to send the StringCache (not that we will, but we need it for the
-// mutex). This is safe when access is protected by a mutex
+// This is safe when access is protected by a mutex
 unsafe impl Send for StringCache {}
 
 #[doc(hidden)]

@@ -33,6 +33,17 @@
 //! // Use as_str() to get a &str
 //! let words: Vec<&str> = u1.as_str().split_whitespace().collect();
 //! assert_eq!(words, ["the", "quick", "brown", "fox"]);
+//!
+//! // For best performance when using Ustr as key for a HashMap or HashSet,
+//! // you'll want to use the precomputed hash. To make this easier, just use
+//! // the UstrMap and UstrSet exports:
+//! use ustr::UstrMap;
+//!
+//! // Key type is always Ustr
+//! let mut map: UstrMap<usize> = UstrMap::default();
+//! map.insert(u1, 17);
+//! assert_eq!(*map.get(&u1).unwrap(), 17);
+//!
 //! ```
 //!
 //! ## Why?
@@ -56,7 +67,6 @@
 //!     there is no de-allocation because the canonical version stays in
 //!     the set.  Also, therefore, no user code mistake can lead to
 //!     memory leaks.
-//!   - Creating a new Ustr is faster than String::from()
 //!
 //! But there are some problems, too.  Canonical strings are never freed
 //! from the table.  So in some sense all the strings "leak", but they
@@ -94,7 +104,12 @@ use std::fmt;
 
 mod stringcache;
 pub use stringcache::*;
+
 mod bumpalloc;
+
+mod hash;
+pub use hash::*;
+use std::hash::{Hash, Hasher};
 
 /// A handle representing a string in the global string cache.
 ///
@@ -112,10 +127,12 @@ impl Ustr {
     /// You can also use the `u!` macro as a shorthand
     /// ```
     /// use ustr::{Ustr, u};
+    /// # unsafe { ustr::_clear_cache() };
     ///
-    /// let u1 = Ustr::from("constant-time comparisons rule");
-    /// let u2 = u!("constant-time comparisons rule");
+    /// let u1 = Ustr::from("the quick brown fox");
+    /// let u2 = u!("the quick brown fox");
     /// assert_eq!(u1, u2);
+    /// assert_eq!(ustr::num_entries(), 1);
     /// ```
     pub fn from(string: &str) -> Ustr {
         let hash = fasthash::city::hash64(string.as_bytes());
@@ -126,6 +143,14 @@ impl Ustr {
     }
 
     /// Get the cached string as a &str
+    /// ```
+    /// use ustr::{Ustr, u};
+    /// # unsafe { ustr::_clear_cache() };
+    ///
+    /// let u_fox = u!("the quick brown fox");
+    /// let words: Vec<&str> = u_fox.as_str().split_whitespace().collect();
+    /// assert_eq!(words, ["the", "quick", "brown", "fox"]);
+    /// ```
     pub fn as_str(&self) -> &str {
         // This is safe if:
         // 1) self.char_ptr points to a valid address
@@ -146,10 +171,23 @@ impl Ustr {
     ///
     /// This includes the null terminator so is safe to pass straight to FFI.
     ///
+    /// ```
+    /// use ustr::{Ustr, u};
+    /// # unsafe { ustr::_clear_cache() };
+    ///
+    /// let u_fox = u!("the quick brown fox");
+    /// let len = unsafe {
+    ///     libc::strlen(u_fox.as_c_str())
+    /// };
+    /// assert_eq!(len, 19);
+    /// ```
+    ///
     /// # Safety
     /// This is just passing a raw byte array with a null terminator to C.
     /// If your source string contains non-ascii bytes then this will pass them
     /// straight along with no checking.
+    /// The string is **immutable**. That means that if you modify it across the
+    /// FFI boundary then all sorts of terrible things will happen.
     pub unsafe fn as_c_str(&self) -> *const std::os::raw::c_char {
         self.char_ptr as *const std::os::raw::c_char
     }
@@ -200,9 +238,23 @@ impl PartialEq<String> for Ustr {
     }
 }
 
+impl Eq for Ustr {}
+
 impl AsRef<str> for Ustr {
     fn as_ref(&self) -> &str {
         self.as_str()
+    }
+}
+
+impl From<&str> for Ustr {
+    fn from(s: &str) -> Ustr {
+        Ustr::from(s)
+    }
+}
+
+impl From<String> for Ustr {
+    fn from(s: String) -> Ustr {
+        Ustr::from(&s)
     }
 }
 
@@ -215,6 +267,14 @@ impl fmt::Display for Ustr {
 impl fmt::Debug for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "u!(\"{}\")", self.as_str())
+    }
+}
+
+// Just feed the precomputed hash into the Hasher. Note that this will of course
+// be terrible unless the Hasher in question is expecting a precomputed hash.
+impl Hash for Ustr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.precomputed_hash().hash(state);
     }
 }
 
@@ -322,6 +382,21 @@ mod tests {
         assert_eq!(u_world, String::from("world"));
 
         println!("{}", std::mem::size_of::<spin::Mutex<super::StringCache>>());
+    }
+
+    #[test]
+    fn empty_string() {
+        use super::Ustr;
+
+        unsafe {
+            super::_clear_cache();
+        }
+
+        let _empty = u!("");
+        let empty = u!("");
+
+        assert_eq!(empty.as_str().is_empty(), true);
+        assert_eq!(super::num_entries(), 1);
     }
 
     #[test]

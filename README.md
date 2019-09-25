@@ -28,6 +28,16 @@ let len = unsafe {
     libc::strlen(h1.as_c_str())
 };
 assert_eq!(len, 5);
+
+// For best performance when using Ustr as key for a HashMap or HashSet,
+// you'll want to use the precomputed hash. To make this easier, just use
+// the UstrMap and UstrSet exports:
+use ustr::UstrMap;
+
+// Key type is always Ustr
+let mut map: UstrMap<usize> = UstrMap::default();
+map.insert(u1, 17);
+assert_eq!(*map.get(&u1).unwrap(), 17);
 ```
 
 # Compared to string-cache

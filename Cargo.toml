@@ -10,6 +10,7 @@ description = "Fast, FFI-friendly string interning."
 lazy_static = "1.4.0"
 spin = "0.5.2"
 fasthash = "0.4.0"
+byteorder = "1.3.2"
 
 [dev-dependencies]
 criterion="0.2"
