@@ -15,7 +15,8 @@ This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oi
 ```rust
 use ustr::{Ustr, u};
 
-// Creation is quick and easy using either `Ustr::from` or the `u!` macro and only one copy of any string is stored
+// Creation is quick and easy using either `Ustr::from` or the `u!` macro and 
+// only one copy of any string is stored
 let h1 = Ustr::from("hello");
 let h2 = u!("hello");
 
