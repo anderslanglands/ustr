@@ -1,5 +1,7 @@
 # Ustr
-Fast, FFI-friendly string interning. A `Ustr` (**U**nique **str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for: 
+Fast, FFI-friendly string interning. 
+
+A `Ustr` (**U**nique **str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for: 
 * Extremely fast string assignment and comparisons 
 * Efficient storage. Only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
 * Fast hashing - the precomputed hash is stored with the string
