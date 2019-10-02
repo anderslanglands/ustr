@@ -38,6 +38,9 @@ pub(crate) struct StringCache {
     _pad: u32,
 }
 
+#[cfg(not(target_pointer_width = "64"))]
+const POINTER_SIZE_ERROR: () = "ustr only works on 64-bit architectures";
+
 // TODO: make these configurable?
 // Initial size of the StringCache table
 pub(crate) const INITIAL_CAPACITY: usize = 1 << 20;
@@ -107,11 +110,13 @@ impl StringCache {
 
             // keep looking
             dist += 1;
+            debug_assert!(dist <= self.mask);
             pos = (pos + dist) & self.mask;
         }
 
+        //
         // insert the new string
-
+        //
         let entry_ptr = unsafe { self.entries.get_unchecked_mut(pos) };
         // add one to length for null byte
         let byte_len = string.len() + 1;
@@ -121,6 +126,10 @@ impl StringCache {
         // allocator and let the old one leak
         let capacity = self.alloc.capacity();
         let allocated = self.alloc.allocated();
+
+        // make sure we won't overflow - this shouldn't be possible
+        assert!(std::usize::MAX - allocated > alloc_size);
+
         if alloc_size + allocated > capacity {
             // just in case, make sure we'll definitely have enough storage
             // for the new string.
@@ -165,6 +174,9 @@ impl StringCache {
     }
 
     // Double the size of the map storage
+    // This is safe as long as
+    // - The in-memory layout of the StringCacheEntry is correct
+    // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
         let mut new_entries = vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
@@ -185,7 +197,10 @@ impl StringCache {
                 }
 
                 dist += 1;
-                pos = (pos + dist) & new_mask;
+                // This should be impossble as we've allocated twice as many
+                // slots as we have entries
+                debug_assert!(dist <= new_mask, "Probing wrapped around");
+                pos = pos.wrapping_add(dist) & new_mask;
             }
 
             new_entries[pos] = *e;
@@ -199,6 +214,8 @@ impl StringCache {
         self.mask = new_mask;
     }
 
+    // This is only called by clear() during tests to clear the cache between
+    // runs. DO NOT CALL THIS.
     pub(crate) unsafe fn clear(&mut self) {
         // just zero all the pointers that have already been set
         std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
@@ -229,7 +246,7 @@ impl Default for StringCache {
     }
 }
 
-// This is safe when access is protected by a mutex
+// We are safe to be Send but not Sync (we get Sync by wrapping in a mutex)
 unsafe impl Send for StringCache {}
 
 #[doc(hidden)]

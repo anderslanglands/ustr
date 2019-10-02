@@ -42,9 +42,13 @@ impl LeakyBumpAlloc {
         System.dealloc(self.start, self.layout);
     }
 
-    // Allocates a new chunk. Panics if out of memory.
+    // Allocates a new chunk. Aborts if out of memory.
     pub unsafe fn allocate(&mut self, num_bytes: usize) -> *mut u8 {
         let aligned_size = round_up_to(num_bytes, self.alignment);
+
+        // Ensure we won't overflow - this would be impossible anyway since
+        // we can't actually allocate that much memory
+        assert!(std::usize::MAX - aligned_size > self.allocated);
 
         if self.allocated + aligned_size > self.capacity {
             eprintln!(
@@ -58,6 +62,7 @@ impl LeakyBumpAlloc {
 
         let alloc_ptr = self.data;
         self.data = self.data.offset(aligned_size as isize);
+        // this is guaranteed not to overflow by the first check above
         self.allocated += aligned_size;
 
         alloc_ptr
