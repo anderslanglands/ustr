@@ -223,6 +223,12 @@ impl StringCache {
     }
 }
 
+impl Default for StringCache {
+    fn default() -> StringCache {
+        StringCache::new()
+    }
+}
+
 // This is safe when access is protected by a mutex
 unsafe impl Send for StringCache {}
 

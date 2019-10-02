@@ -498,41 +498,7 @@ mod tests {
 }
 
 lazy_static::lazy_static! {
-    // There's got to be a better way of doing this - macro?
-    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = [
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-        Mutex::new(StringCache::new()),
-    ];
+    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = Default::default();
 }
 
 // Use the top bits of the hash to choose a bin
