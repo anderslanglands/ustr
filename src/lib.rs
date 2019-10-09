@@ -26,7 +26,7 @@
 //!
 //! // You can pass straight to FFI
 //! let len = unsafe {
-//!     libc::strlen(u1.as_c_str())
+//!     libc::strlen(u1.as_char_ptr())
 //! };
 //! assert_eq!(len, 19);
 //!
@@ -113,10 +113,11 @@ use std::hash::{Hash, Hasher};
 
 /// A handle representing a string in the global string cache.
 ///
-/// To use, create one using `Ustr::from` or the `u!` macro. You can freely
+/// To use, create one using `Ustr::from` or the `ustr` function. You can freely
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[repr(transparent)]
 pub struct Ustr {
     char_ptr: *const u8,
 }
@@ -177,7 +178,7 @@ impl Ustr {
     ///
     /// let u_fox = u("the quick brown fox");
     /// let len = unsafe {
-    ///     libc::strlen(u_fox.as_c_str())
+    ///     libc::strlen(u_fox.as_char_ptr())
     /// };
     /// assert_eq!(len, 19);
     /// ```
@@ -188,7 +189,7 @@ impl Ustr {
     /// straight along with no checking.
     /// The string is **immutable**. That means that if you modify it across the
     /// FFI boundary then all sorts of terrible things will happen.
-    pub unsafe fn as_c_str(&self) -> *const std::os::raw::c_char {
+    pub unsafe fn as_char_ptr(&self) -> *const std::os::raw::c_char {
         self.char_ptr as *const std::os::raw::c_char
     }
 
@@ -405,14 +406,14 @@ mod tests {
 
         let s_fox = "The quick brown fox jumps over the lazy dog.";
         let u_fox = u(s_fox);
-        let fox = unsafe { CStr::from_ptr(u_fox.as_c_str()) }
+        let fox = unsafe { CStr::from_ptr(u_fox.as_char_ptr()) }
             .to_string_lossy()
             .into_owned();
         assert_eq!(fox, s_fox);
 
         let s_odys = "Τη γλώσσα μου έδωσαν ελληνική";
         let u_odys = u(s_odys);
-        let odys = unsafe { CStr::from_ptr(u_odys.as_c_str()) }
+        let odys = unsafe { CStr::from_ptr(u_odys.as_char_ptr()) }
             .to_string_lossy()
             .into_owned();
         assert_eq!(odys, s_odys);
