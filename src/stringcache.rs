@@ -117,6 +117,8 @@ impl StringCache {
         //
         // insert the new string
         //
+
+        // we know pos is in bounds as it's &ed with the mask above
         let entry_ptr = unsafe { self.entries.get_unchecked_mut(pos) };
         // add one to length for null byte
         let byte_len = string.len() + 1;
@@ -127,12 +129,14 @@ impl StringCache {
         let capacity = self.alloc.capacity();
         let allocated = self.alloc.allocated();
 
-        // make sure we won't overflow - this shouldn't be possible
+        // Ensure we won't overflow - this would be impossible anyway since
+        // we can't actually allocate that much memory
         assert!(std::usize::MAX - allocated > alloc_size);
 
         if alloc_size + allocated > capacity {
             // just in case, make sure we'll definitely have enough storage
             // for the new string.
+            assert!(capacity < std::usize::MAX / 2);
             let new_capacity = (capacity * 2).max(alloc_size);
             let old_alloc = std::mem::replace(
                 &mut self.alloc,

@@ -34,11 +34,11 @@ impl Hasher for IdentityHasher {
 
 #[test]
 fn test_hashing() {
-    use crate::{u, Ustr};
+    use crate::ustr as u;
 
     use std::hash::Hash;
-    let u1 = u!("the quick brown fox");
-    let u2 = u!("jumped over the lazy dog");
+    let u1 = u("the quick brown fox");
+    let u2 = u("jumped over the lazy dog");
 
     let mut hasher = IdentityHasher::default();
     u1.hash(&mut hasher);

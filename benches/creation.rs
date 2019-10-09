@@ -34,7 +34,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             unsafe { ustr::_clear_cache() };
             for s in s.iter().cycle().take(100_000) {
-                black_box(u!(s));
+                black_box(ustr(s));
             }
         });
     });
@@ -88,7 +88,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     scope.spawn(move |_| {
                         while rx1.recv().is_ok() {
                             for s in s.iter().cycle().skip(t * 17).take(num) {
-                                black_box(u!(s));
+                                black_box(ustr(s));
                             }
                             tx2.send(()).unwrap();
                         }

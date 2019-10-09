@@ -12,13 +12,13 @@
 //! # Usage
 //!
 //! ```rust
-//! use ustr::{Ustr, u};
+//! use ustr::{Ustr, ustr, ustr as u};
 //!
 //! # unsafe { ustr::_clear_cache() };
-//! // Creation is quick and easy using either `Ustr::from` or the `u!` macro
+//! // Creation is quick and easy using either `Ustr::from` or the ustr function
 //! // and only one copy of any string is stored
 //! let u1 = Ustr::from("the quick brown fox");
-//! let u2 = u!("the quick brown fox");
+//! let u2 = ustr("the quick brown fox");
 //!
 //! // Comparisons and copies are extremely cheap
 //! let u3 = u1;
@@ -124,13 +124,13 @@ pub struct Ustr {
 impl Ustr {
     /// Create a new Ustr from the given &str.
     ///
-    /// You can also use the `u!` macro as a shorthand
+    /// You can also use the ustr function
     /// ```
-    /// use ustr::{Ustr, u};
+    /// use ustr::{Ustr, ustr as u};
     /// # unsafe { ustr::_clear_cache() };
     ///
     /// let u1 = Ustr::from("the quick brown fox");
-    /// let u2 = u!("the quick brown fox");
+    /// let u2 = u("the quick brown fox");
     /// assert_eq!(u1, u2);
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
@@ -144,10 +144,10 @@ impl Ustr {
 
     /// Get the cached string as a &str
     /// ```
-    /// use ustr::{Ustr, u};
+    /// use ustr::ustr as u;
     /// # unsafe { ustr::_clear_cache() };
     ///
-    /// let u_fox = u!("the quick brown fox");
+    /// let u_fox = u("the quick brown fox");
     /// let words: Vec<&str> = u_fox.as_str().split_whitespace().collect();
     /// assert_eq!(words, ["the", "quick", "brown", "fox"]);
     /// ```
@@ -172,10 +172,10 @@ impl Ustr {
     /// This includes the null terminator so is safe to pass straight to FFI.
     ///
     /// ```
-    /// use ustr::{Ustr, u};
+    /// use ustr::ustr as u;
     /// # unsafe { ustr::_clear_cache() };
     ///
-    /// let u_fox = u!("the quick brown fox");
+    /// let u_fox = u("the quick brown fox");
     /// let len = unsafe {
     ///     libc::strlen(u_fox.as_c_str())
     /// };
@@ -278,22 +278,6 @@ impl Hash for Ustr {
     }
 }
 
-/// Shorthand macro for creating a Ustr.
-///
-/// ```
-/// use ustr::{u, Ustr};
-/// let u_hello = u!("Hello");
-/// let u_world = u!("world");
-/// println!("{}, {}!", u_hello, u_world);
-/// // > Hello, world!
-/// ```
-#[macro_export]
-macro_rules! u {
-    ($s:expr) => {
-        Ustr::from($s);
-    };
-}
-
 /// DO NOT CALL THIS.
 ///
 /// Clears the cache - used for benchmarking and testing purposes to clear the
@@ -317,16 +301,31 @@ pub fn total_allocated() -> usize {
         .sum()
 }
 
+/// Create a new Ustr from the given &str.
+///
+/// ```
+/// use ustr::ustr;
+/// # unsafe { ustr::_clear_cache() };
+///
+/// let u1 = ustr("the quick brown fox");
+/// let u2 = ustr("the quick brown fox");
+/// assert_eq!(u1, u2);
+/// assert_eq!(ustr::num_entries(), 1);
+/// ```
+pub fn ustr(s: &str) -> Ustr {
+    Ustr::from(s)
+}
+
 /// Returns the number of unique strings in the cache
 ///
 /// This may be an underestimate if other threads are writing to the cache
 /// concurrently.
 ///
 /// ```
-/// use ustr::{u, Ustr};
+/// use ustr::ustr as u;
 ///
-/// let _ = u!("Hello");
-/// let _ = u!(", World!");
+/// let _ = u("Hello");
+/// let _ = u(", World!");
 /// assert_eq!(ustr::num_entries(), 2);
 /// ```
 pub fn num_entries() -> usize {
@@ -374,11 +373,11 @@ pub fn string_cache_iter() -> StringCacheIterator {
 mod tests {
     #[test]
     fn it_works() {
-        use super::Ustr;
+        use super::ustr as u;
 
-        let u_hello = u!("hello");
+        let u_hello = u("hello");
         assert_eq!(u_hello, "hello");
-        let u_world = u!("world");
+        let u_world = u("world");
         assert_eq!(u_world, String::from("world"));
 
         println!("{}", std::mem::size_of::<spin::Mutex<super::StringCache>>());
@@ -386,14 +385,14 @@ mod tests {
 
     #[test]
     fn empty_string() {
-        use super::Ustr;
+        use super::ustr as u;
 
         unsafe {
             super::_clear_cache();
         }
 
-        let _empty = u!("");
-        let empty = u!("");
+        let _empty = u("");
+        let empty = u("");
 
         assert_eq!(empty.as_str().is_empty(), true);
         assert_eq!(super::num_entries(), 1);
@@ -401,18 +400,18 @@ mod tests {
 
     #[test]
     fn c_str_works() {
-        use super::Ustr;
+        use super::ustr as u;
         use std::ffi::CStr;
 
         let s_fox = "The quick brown fox jumps over the lazy dog.";
-        let u_fox = u!(s_fox);
+        let u_fox = u(s_fox);
         let fox = unsafe { CStr::from_ptr(u_fox.as_c_str()) }
             .to_string_lossy()
             .into_owned();
         assert_eq!(fox, s_fox);
 
         let s_odys = "Τη γλώσσα μου έδωσαν ελληνική";
-        let u_odys = u!(s_odys);
+        let u_odys = u(s_odys);
         let odys = unsafe { CStr::from_ptr(u_odys.as_c_str()) }
             .to_string_lossy()
             .into_owned();
@@ -421,7 +420,7 @@ mod tests {
 
     #[test]
     fn blns() {
-        use super::{string_cache_iter, Ustr};
+        use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
 
         // clear the cache first or our results will be wrong
@@ -441,7 +440,7 @@ mod tests {
         let mut ss = Vec::new();
 
         for s in blns.split_whitespace().cycle().take(100_000) {
-            let u = u!(s);
+            let u = u(s);
             us.push(u);
             ss.push(s.to_owned());
         }
@@ -465,7 +464,7 @@ mod tests {
 
     #[test]
     fn raft() {
-        use super::{u, Ustr};
+        use super::ustr as u;
         use std::sync::Arc;
 
         let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -491,7 +490,7 @@ mod tests {
             let mut v = Vec::with_capacity(20_000);
             unsafe { super::_clear_cache() };
             for s in s.iter().cycle().take(20_000) {
-                v.push(u!(s));
+                v.push(u(s));
             }
         }
     }
