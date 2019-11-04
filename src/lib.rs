@@ -351,7 +351,7 @@ pub fn num_entries_per_bin() -> Vec<usize> {
 /// `string_cache_iter()` was called. It is of course possible that another
 /// thread will add more strings to the cache after this, but since we never
 /// destroy the strings, they remain valid, meaning it's safe to iterate over
-/// them, the list jsut might not be completely up to date.
+/// them, the list just might not be completely up to date.
 pub fn string_cache_iter() -> StringCacheIterator {
     let mut allocs = Vec::new();
     for m in STRING_CACHE.iter() {
