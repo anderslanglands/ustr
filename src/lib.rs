@@ -196,7 +196,7 @@ impl Ustr {
     /// Get the length (in bytes) of this string.
     pub fn len(&self) -> usize {
         // This is safe if:
-        // 1) len is a usize stored usize aligned usize bytes before char_ptr
+        // 1) len is a usize stored usize-aligned usize bytes before char_ptr
         // This is guaranteed by StringCache::insert()
         unsafe {
             let len_ptr = (self.char_ptr as *const usize).offset(-1isize);

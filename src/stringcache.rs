@@ -96,11 +96,14 @@ impl StringCache {
                 // we're safe to create a string slice from the chars since
                 // they were copied directly from a valid &str.
                 let entry_chars = entry.offset(1isize) as *const u8;
-                if (**entry).hash == hash
-                    && (**entry).len == string.len()
+                // if entry is non-null then it must point to a valid
+                // StringCacheEntry
+                let sce = &**entry;
+                if sce.hash == hash
+                    && sce.len == string.len()
                     && std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                         entry_chars,
-                        (**entry).len,
+                        sce.len,
                     )) == string
                 {
                     // found matching string in the cache already, return it
@@ -155,12 +158,17 @@ impl StringCache {
             *entry_ptr = self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
 
             // write the header
-            let write_ptr = (*entry_ptr) as *mut u64;
-            std::ptr::write(write_ptr, hash);
-            let write_ptr = write_ptr.offset(1isize) as *mut usize;
-            std::ptr::write(write_ptr, string.len());
-            // write the characters
-            let char_ptr = write_ptr.offset(1isize) as *mut u8;
+            // entry_ptr is guaranteed to point to a valid StringCacheEntry, or
+            // alloc.allocate() would have aborted
+            std::ptr::write(
+                *entry_ptr,
+                StringCacheEntry {
+                    hash,
+                    len: string.len(),
+                },
+            );
+            // write the characters after the StringCacheEntry
+            let char_ptr = entry_ptr.offset(1isize) as *mut u8;
             std::ptr::copy(string.as_bytes().as_ptr(), char_ptr, string.len());
             // write the trailing null
             let write_ptr = char_ptr.offset(string.len() as isize);
