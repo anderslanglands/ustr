@@ -244,7 +244,11 @@ impl StringCache {
     }
 
     pub(crate) fn total_allocated(&self) -> usize {
-        self.total_allocated + self.alloc.allocated()
+        self.alloc.allocated() + self.old_allocs.iter().map(|a| a.allocated()).sum::<usize>()
+    }
+
+    pub(crate) fn total_capacity(&self) -> usize {
+        self.alloc.capacity() + self.old_allocs.iter().map(|a| a.capacity()).sum::<usize>()
     }
 
     pub(crate) fn num_entries(&self) -> usize {
