@@ -124,6 +124,10 @@ impl StringCache {
         // we know pos is in bounds as it's &ed with the mask above
         let entry_ptr = unsafe { self.entries.get_unchecked_mut(pos) };
         // add one to length for null byte
+        // there's no way we could overflow here in practice since that would
+        // require having allocated a u64:MAX-length string, by which time
+        // we'll be using 128-bit pointers and we'll need to rewrite this
+        // crate anyway
         let byte_len = string.len() + 1;
         let alloc_size = std::mem::size_of::<StringCacheEntry>() + byte_len;
 
