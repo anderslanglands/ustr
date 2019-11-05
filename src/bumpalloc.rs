@@ -3,85 +3,73 @@ use std::alloc::{GlobalAlloc, Layout, System};
 // The world's dumbest allocator. Just keep bumping a pointer until we run out
 // of memory, in which case we abort. StringCache is responsible for creating
 // a new allocator when that's about to happen.
+// This is now bumping downward rather than up, which simplifies the allocate()
+// method and gives a small (5-7%) performance improvement in multithreaded
+// benchmarks
+// See https://fitzgeraldnick.com/2019/11/01/always-bump-downwards.html
 pub(crate) struct LeakyBumpAlloc {
     layout: Layout,
-    // pointer to start of free, aligned memory
-    data: *mut u8,
-    // number of bytes given out
-    allocated: usize,
-    // total capacity
-    capacity: usize,
-    // alignment of all allocations
-    alignment: usize,
-    // pointer to the start of the whole arena
     start: *mut u8,
-}
-
-pub fn round_up_to(n: usize, align: usize) -> usize {
-    debug_assert!(align.is_power_of_two());
-    (n.checked_add(align).expect("round_up_to overflowed") - 1) & !(align - 1)
+    end: *mut u8,
+    ptr: *mut u8,
 }
 
 impl LeakyBumpAlloc {
     pub fn new(capacity: usize, alignment: usize) -> LeakyBumpAlloc {
         let layout = Layout::from_size_align(capacity, alignment).unwrap();
-        let data = unsafe { System.alloc(layout) };
+        let start = unsafe { System.alloc(layout) };
+        let end = unsafe { start.offset(layout.size() as isize) };
+        let ptr = end;
         LeakyBumpAlloc {
             layout,
-            data,
-            allocated: 0,
-            capacity,
-            alignment,
-            start: data,
+            start,
+            end,
+            ptr,
         }
     }
 
     #[doc(hidden)]
-    // used for resetting the cache between benchmark runs. Do not call this.
+    // used for resetting the cache between benchmark runs. DO NOT CALL THIS.
     pub unsafe fn clear(&mut self) {
         System.dealloc(self.start, self.layout);
     }
 
     // Allocates a new chunk. Aborts if out of memory.
     pub unsafe fn allocate(&mut self, num_bytes: usize) -> *mut u8 {
-        let aligned_size = round_up_to(num_bytes, self.alignment);
-
-        let new_allocated = self
-            .allocated
-            .checked_add(aligned_size)
-            .expect("allocated + aligned_size overflowed");
-
-        if new_allocated > self.capacity {
+        // our new ptr will be offset down the heap by num_bytes bytes
+        let ptr = self.ptr as usize;
+        let new_ptr = ptr.checked_sub(num_bytes).expect("ptr sub overflowed");
+        // round down to alignment
+        let new_ptr = new_ptr & !(self.layout.align() - 1);
+        //check we have enough capacity
+        let start = self.start as usize;
+        if new_ptr < start {
             eprintln!(
                 "Allocator asked to bump to {} bytes with a capacity of {}",
-                self.allocated + aligned_size,
-                self.capacity
+                self.end as usize - new_ptr,
+                self.capacity()
             );
             // we have to abort here rather than panic or the mutex may deadlock
             std::process::abort();
         }
 
-        let alloc_ptr = self.data;
-        self.data = self.data.offset(aligned_size as isize);
-        // this is guaranteed not to overflow by the first check above
-        self.allocated = new_allocated;
-
-        alloc_ptr
+        self.ptr = new_ptr as *mut u8;
+        self.ptr
     }
 
     pub fn allocated(&self) -> usize {
-        self.allocated
+        (self.end as usize - self.ptr as usize)
     }
 
     pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    pub(crate) fn start(&self) -> *const u8 {
-        self.start
+        self.layout.size()
     }
 
     pub(crate) fn end(&self) -> *const u8 {
-        self.data
+        self.end
+    }
+
+    pub(crate) fn ptr(&self) -> *const u8 {
+        self.ptr
     }
 }

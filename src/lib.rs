@@ -364,10 +364,13 @@ pub fn string_cache_iter() -> StringCacheIterator {
     let mut allocs = Vec::new();
     for m in STRING_CACHE.iter() {
         let sc = m.lock();
+        // the start of the allocator's data is actually the ptr, start() just
+        // points to the beginning of the allocated region. The first bytes will
+        // be uninitialized since we're bumping down
         for a in &sc.old_allocs {
-            allocs.push((a.start(), a.end()));
+            allocs.push((a.ptr(), a.end()));
         }
-        allocs.push((sc.alloc.start(), sc.alloc.end()));
+        allocs.push((sc.alloc.ptr(), sc.alloc.end()));
     }
 
     let current_ptr = allocs[0].0;

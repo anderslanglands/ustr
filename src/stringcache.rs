@@ -276,6 +276,11 @@ pub struct StringCacheIterator {
     pub(crate) current_ptr: *const u8,
 }
 
+fn round_up_to(n: usize, align: usize) -> usize {
+    debug_assert!(align.is_power_of_two());
+    (n.checked_add(align).expect("round_up_to overflowed") - 1) & !(align - 1)
+}
+
 impl Iterator for StringCacheIterator {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
@@ -301,7 +306,7 @@ impl Iterator for StringCacheIterator {
             let char_ptr = len_ptr.offset(1) as *const u8;
             // the next entry will be the size of the number of bytes in the
             // string, +1 for the null byte, rounded up to the alignment (8)
-            self.current_ptr = char_ptr.offset(super::bumpalloc::round_up_to(
+            self.current_ptr = char_ptr.offset(round_up_to(
                 len + 1,
                 std::mem::align_of::<StringCacheEntry>(),
             ) as isize);
