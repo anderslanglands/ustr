@@ -15,12 +15,12 @@ This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oi
 # Usage
 
 ```rust
-use ustr::{Ustr, u};
+use ustr::{Ustr, ustr};
 
-// Creation is quick and easy using either `Ustr::from` or the `u!` macro and 
-// only one copy of any string is stored
+// Creation is quick and easy using either `Ustr::from` or the `ustr` short 
+// function and only one copy of any string is stored
 let h1 = Ustr::from("hello");
-let h2 = u!("hello");
+let h2 = ustr("hello");
 
 // Comparisons and copies are extremely cheap
 let h3 = h1;
@@ -28,7 +28,7 @@ assert_eq!(h2, h3);
 
 // You can pass straight to FFI
 let len = unsafe {
-    libc::strlen(h1.as_c_str())
+    libc::strlen(h1.as_char_ptr())
 };
 assert_eq!(len, 5);
 
@@ -63,7 +63,7 @@ Ustrs are significantly faster to create than string-interner or string-cache. C
 ![raft bench](ustring_bench_raft.png)
 
 # Testing
-Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache.
+Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache or segfaults caused by concurrently clearing the cache. Note that this cannot happen in user code if you don't call the hidden functions documented DO NOT CALL. If you do, well you were warned.
 
 # Why?
 It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation...
@@ -89,7 +89,7 @@ On the whole, `Ustr`s are a really great string representation
 - if you don't need to do a lot of string assignment or equality testing, but lots of more complex string manipulation.
 
 ## Safety and Compatibility
-This crate has been tested (a little) on x86_64 ONLY. It might well do horrible, horrible things on other architectures.
+This crate has been tested (a little) on x86_64 ONLY. It will not compile on architectures where the pointer size is no 64 bits.
 
 ## Licence
 BSD+ License
