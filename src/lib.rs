@@ -104,6 +104,10 @@ use std::fmt;
 
 mod stringcache;
 pub use stringcache::*;
+#[cfg(feature = "serialization")]
+pub mod serialization;
+#[cfg(feature = "serialization")]
+pub use serialization::StringCachePlaceholder;
 
 mod bumpalloc;
 
@@ -137,7 +141,7 @@ impl Ustr {
     /// ```
     pub fn from(string: &str) -> Ustr {
         let hash = fasthash::city::hash64(string.as_bytes());
-        let mut sc = STRING_CACHE[whichbin(hash)].lock();
+        let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
             char_ptr: sc.insert(string, hash),
         }
@@ -289,7 +293,7 @@ impl Hash for Ustr {
 /// DO NOT CALL THIS.
 #[doc(hidden)]
 pub unsafe fn _clear_cache() {
-    for m in STRING_CACHE.iter() {
+    for m in STRING_CACHE.0.iter() {
         m.lock().clear();
     }
 }
@@ -297,6 +301,7 @@ pub unsafe fn _clear_cache() {
 /// Returns the total amount of memory allocated and in use by the cache in bytes
 pub fn total_allocated() -> usize {
     STRING_CACHE
+        .0
         .iter()
         .map(|sc| sc.lock().total_allocated())
         .sum()
@@ -305,6 +310,7 @@ pub fn total_allocated() -> usize {
 /// Returns the total amount of memory reserved by the cache in bytes
 pub fn total_capacity() -> usize {
     STRING_CACHE
+        .0
         .iter()
         .map(|sc| sc.lock().total_capacity())
         .sum()
@@ -325,6 +331,10 @@ pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
 
+pub fn get_cache() -> &'static Bins {
+    &*STRING_CACHE
+}
+
 /// Returns the number of unique strings in the cache
 ///
 /// This may be an underestimate if other threads are writing to the cache
@@ -338,12 +348,17 @@ pub fn ustr(s: &str) -> Ustr {
 /// assert_eq!(ustr::num_entries(), 2);
 /// ```
 pub fn num_entries() -> usize {
-    STRING_CACHE.iter().map(|sc| sc.lock().num_entries()).sum()
+    STRING_CACHE
+        .0
+        .iter()
+        .map(|sc| sc.lock().num_entries())
+        .sum()
 }
 
 #[doc(hidden)]
 pub fn num_entries_per_bin() -> Vec<usize> {
     STRING_CACHE
+        .0
         .iter()
         .map(|sc| sc.lock().num_entries())
         .collect::<Vec<_>>()
@@ -362,7 +377,7 @@ pub fn num_entries_per_bin() -> Vec<usize> {
 /// them, the list just might not be completely up to date.
 pub fn string_cache_iter() -> StringCacheIterator {
     let mut allocs = Vec::new();
-    for m in STRING_CACHE.iter() {
+    for m in STRING_CACHE.0.iter() {
         let sc = m.lock();
         // the start of the allocator's data is actually the ptr, start() just
         // points to the beginning of the allocated region. The first bytes will
@@ -380,6 +395,9 @@ pub fn string_cache_iter() -> StringCacheIterator {
         current_ptr,
     }
 }
+
+#[repr(transparent)]
+pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
 
 #[cfg(test)]
 mod tests {
@@ -514,10 +532,59 @@ mod tests {
             }
         }
     }
+
+    #[cfg(feature = "serialization")]
+    #[test]
+    fn serialization() {
+        use super::{string_cache_iter, ustr as u};
+        use std::collections::HashSet;
+
+        // clear the cache first or our results will be wrong
+        unsafe { super::_clear_cache() };
+
+        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("data")
+            .join("blns.txt");
+        let blns = std::fs::read_to_string(path).unwrap();
+
+        let mut hs = HashSet::new();
+        for s in blns.split_whitespace() {
+            hs.insert(s);
+        }
+
+        let mut us = Vec::new();
+        let mut ss = Vec::new();
+
+        for s in blns.split_whitespace().cycle().take(100_000) {
+            let u = u(s);
+            us.push(u);
+            ss.push(s.to_owned());
+        }
+
+        let json = serde_json::to_string(super::get_cache()).unwrap();
+        unsafe {
+            super::_clear_cache();
+        }
+        let _: super::StringCachePlaceholder = serde_json::from_str(&json).unwrap();
+
+        // now check that we've got the same data in the cache still
+        let mut hs_u = HashSet::new();
+        for s in string_cache_iter() {
+            hs_u.insert(s);
+        }
+        let diff: HashSet<_> = hs.difference(&hs_u).collect();
+
+        // check that the number of entries is the same
+        assert_eq!(super::num_entries(), hs.len());
+
+        // check that we have the exact same (unique) strings in the cache as in
+        // the source data
+        assert_eq!(diff.iter().count(), 0);
+    }
 }
 
 lazy_static::lazy_static! {
-    static ref STRING_CACHE: [Mutex<StringCache>; NUM_BINS] = {
+    static ref STRING_CACHE: Bins = {
         use std::mem::{self, MaybeUninit};
         // This deeply unsafe feeling dance allows us to initialize an array of
         // arbitrary size and will have to tide us over until const generics
@@ -542,7 +609,7 @@ lazy_static::lazy_static! {
 
         // Everything is initialized. Transmute the array to the
         // initialized type.
-        unsafe { mem::transmute::<_, [Mutex<StringCache>; NUM_BINS]>(bins) }
+        unsafe { mem::transmute::<_, Bins>(bins) }
     };
 }
 
