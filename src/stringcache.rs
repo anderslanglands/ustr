@@ -28,6 +28,7 @@ use super::bumpalloc::LeakyBumpAlloc;
 // the spinlock in the lazy_static ref. The initial capacity of the cache is
 // divided evenly among a number of 'bins' or shards each with their own lock,
 // in order to reduce contention.
+#[repr(align(128))]
 pub(crate) struct StringCache {
     pub(crate) alloc: LeakyBumpAlloc,
     pub(crate) old_allocs: Vec<LeakyBumpAlloc>,
@@ -35,7 +36,8 @@ pub(crate) struct StringCache {
     num_entries: usize,
     mask: usize,
     total_allocated: usize,
-    _pad: u32,
+    // padding and aligning to 128 bytes gives up to 20% performance improvement
+    _pad: [u32; 3],
 }
 
 #[cfg(not(target_pointer_width = "64"))]
@@ -71,7 +73,7 @@ impl StringCache {
             num_entries: 0,
             mask: capacity - 1,
             total_allocated: capacity,
-            _pad: 0,
+            _pad: [0u32; 3],
         }
     }
 

@@ -475,6 +475,11 @@ mod tests {
 
         println!("Total allocated: {}", super::total_allocated());
         println!("Total capacity: {}", super::total_capacity());
+
+        println!(
+            "size of StringCache: {}",
+            std::mem::size_of::<super::StringCache>()
+        );
     }
 
     #[test]
