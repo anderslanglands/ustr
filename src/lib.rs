@@ -472,6 +472,9 @@ mod tests {
 
         let nbs = super::num_entries_per_bin();
         println!("{:?}", nbs);
+
+        println!("Total allocated: {}", super::total_allocated());
+        println!("Total capacity: {}", super::total_capacity());
     }
 
     #[test]
