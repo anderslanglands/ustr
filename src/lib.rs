@@ -97,8 +97,8 @@
 //!     testing, but lots of more complex string manipulation.
 //!
 //! ## Safety and Compatibility
-//! This crate has been tested (a little) on x86_64 ONLY. It might well do
-//! horrible, horrible things on other architectures.
+//! This crate has been tested on x86_64 ONLY. Compilation will fail with a
+//! static assert if the pointer size is not 64 bits.
 use spin::Mutex;
 use std::fmt;
 
