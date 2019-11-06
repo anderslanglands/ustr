@@ -37,6 +37,7 @@ pub(crate) struct StringCache {
     mask: usize,
     total_allocated: usize,
     // padding and aligning to 128 bytes gives up to 20% performance improvement
+    // this actually aligns to 256 bytes because of the Mutex around it
     _pad: [u32; 3],
 }
 
