@@ -47,7 +47,7 @@ pub(crate) const INITIAL_CAPACITY: usize = 1 << 20;
 // Initial size of the allocator storage (in bytes)
 pub(crate) const INITIAL_ALLOC: usize = 4 << 20;
 // Number of bins (shards) for map
-pub(crate) const BIN_SHIFT: usize = 5;
+pub(crate) const BIN_SHIFT: usize = 6;
 pub(crate) const NUM_BINS: usize = 1 << BIN_SHIFT;
 // Shift for top bits to determine bin a hash falls into
 pub(crate) const TOP_SHIFT: usize = 8 * std::mem::size_of::<usize>() - BIN_SHIFT;
@@ -125,7 +125,7 @@ impl StringCache {
         let entry_ptr = unsafe { self.entries.get_unchecked_mut(pos) };
         // add one to length for null byte
         // there's no way we could overflow here in practice since that would
-        // require having allocated a u64:MAX-length string, by which time
+        // require having allocated a u64::MAX-length string, by which time
         // we'll be using 128-bit pointers and we'll need to rewrite this
         // crate anyway
         let byte_len = string.len() + 1;
@@ -173,7 +173,7 @@ impl StringCache {
             );
             // write the characters after the StringCacheEntry
             let char_ptr = entry_ptr.offset(1isize) as *mut u8;
-            std::ptr::copy(string.as_bytes().as_ptr(), char_ptr, string.len());
+            std::ptr::copy_nonoverlapping(string.as_bytes().as_ptr(), char_ptr, string.len());
             // write the trailing null
             let write_ptr = char_ptr.offset(string.len() as isize);
             std::ptr::write(write_ptr, 0u8);
@@ -306,10 +306,8 @@ impl Iterator for StringCacheIterator {
             let char_ptr = len_ptr.offset(1) as *const u8;
             // the next entry will be the size of the number of bytes in the
             // string, +1 for the null byte, rounded up to the alignment (8)
-            self.current_ptr = char_ptr.offset(round_up_to(
-                len + 1,
-                std::mem::align_of::<StringCacheEntry>(),
-            ) as isize);
+            self.current_ptr = char_ptr
+                .offset(round_up_to(len + 1, std::mem::align_of::<StringCacheEntry>()) as isize);
 
             let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(char_ptr, len));
             Some(s)
