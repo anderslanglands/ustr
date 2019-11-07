@@ -13,7 +13,14 @@ impl Serialize for Bins {
         let strings: Vec<&'static str> = string_cache_iter().collect();
         let mut seq = serializer.serialize_seq(Some(strings.len()))?;
         for s in strings {
-            seq.serialize_element(s)?;
+            match seq.serialize_element(s) {
+                Ok(_) => (),
+                Err(e) => {
+                    panic!(
+                        format!("Error serializing \"{}\": {}", s, e)
+                    );
+                }
+            }
         }
         seq.end()
     }
@@ -28,7 +35,7 @@ impl BinsVisitor {
 }
 
 impl<'de> Visitor<'de> for BinsVisitor {
-    type Value = StringCachePlaceholder;
+    type Value = DeserializedCache;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a sequence of strings")
@@ -42,14 +49,14 @@ impl<'de> Visitor<'de> for BinsVisitor {
             ustr(&s);
         }
 
-        Ok(StringCachePlaceholder {})
+        Ok(DeserializedCache {})
     }
 }
 
-pub struct StringCachePlaceholder {}
+pub struct DeserializedCache {}
 
-impl<'de> Deserialize<'de> for StringCachePlaceholder {
-    fn deserialize<D>(deserializer: D) -> Result<StringCachePlaceholder, D::Error>
+impl<'de> Deserialize<'de> for DeserializedCache {
+    fn deserialize<D>(deserializer: D) -> Result<DeserializedCache, D::Error>
     where
         D: Deserializer<'de>,
     {

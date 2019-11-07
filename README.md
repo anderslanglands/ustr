@@ -43,6 +43,21 @@ map.insert(u1, 17);
 assert_eq!(*map.get(&u1).unwrap(), 17);
 ```
 
+By enabling the `"serialize"` feature you can also serialize the whole cache
+with serde. Since the cache is global, use the `ustr::DeserializedCache`
+dummy object to drive the deserialization.
+
+```rust
+ustr("Send me to JSON and back");
+let json = serde_json::to_string(ustr::get_cache()).unwrap();
+
+// ... some time later ...
+let _: ustr::DeserializedCache = serde_json::from_str(&json).unwrap();
+assert_eq!(ustr::num_entries(), 1);
+assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON and back"]);
+
+```
+
 # Compared to string-cache
 [string-cache](https://github.com/servo/string-cache) provides a global cache that can be created at compile time as well as at run time. Dynamic strings in the cache appear to be reference-counted so will be freed when they are no longer used, while `Ustr`s are never deleted. 
 

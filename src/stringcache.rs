@@ -59,12 +59,13 @@ impl StringCache {
     /// Create a new StringCache with the given starting capacity
     pub fn new() -> StringCache {
         let capacity = INITIAL_CAPACITY / NUM_BINS;
+        let alloc = LeakyBumpAlloc::new(
+            INITIAL_ALLOC / NUM_BINS,
+            std::mem::align_of::<StringCacheEntry>(),
+        );
         StringCache {
             // current allocator
-            alloc: LeakyBumpAlloc::new(
-                INITIAL_ALLOC / NUM_BINS,
-                std::mem::align_of::<StringCacheEntry>(),
-            ),
+            alloc,
             // old allocators we'll keep around for iteration purposes.
             // 16 would mean we've allocated 128GB of string storage since we
             // double each time.
@@ -239,10 +240,11 @@ impl StringCache {
         // just zero all the pointers that have already been set
         std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
         self.num_entries = 0;
+        self.total_allocated = 0;
         for a in self.old_allocs.iter_mut() {
             a.clear();
         }
-        self.old_allocs.clear();
+        self.old_allocs = Vec::new();
         self.alloc.clear();
         self.alloc = LeakyBumpAlloc::new(
             INITIAL_ALLOC / NUM_BINS,
@@ -312,6 +314,7 @@ impl Iterator for StringCacheIterator {
             self.current_ptr = char_ptr
                 .offset(round_up_to(len + 1, std::mem::align_of::<StringCacheEntry>()) as isize);
 
+            // we know we're safe not to check here since we put valid UTF-8 in
             let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(char_ptr, len));
             Some(s)
         }

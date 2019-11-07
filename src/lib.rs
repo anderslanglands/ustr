@@ -43,6 +43,27 @@
 //! let mut map: UstrMap<usize> = UstrMap::default();
 //! map.insert(u1, 17);
 //! assert_eq!(*map.get(&u1).unwrap(), 17);
+//! ```
+//!
+//!
+//! By enabling the `"serialize"` feature you can also serialize the whole cache
+//! with serde. Since the cache is global, use the `ustr::DeserializedCache`
+//! dummy object to drive the deserialization.
+//!
+//! ```rust
+//! # use ustr::{Ustr, ustr, ustr as u};
+//! # #[cfg(feature="serialization")]
+//! # {
+//! # unsafe { ustr::_clear_cache() };
+//! ustr("Send me to JSON and back");
+//! let json = serde_json::to_string(ustr::get_cache()).unwrap();
+//!
+//! // ... some time later ...
+//! # unsafe { ustr::_clear_cache() };
+//! let _: ustr::DeserializedCache = serde_json::from_str(&json).unwrap();
+//! assert_eq!(ustr::num_entries(), 1);
+//! assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON and back"]);
+//! # }
 //!
 //! ```
 //!
@@ -107,7 +128,7 @@ pub use stringcache::*;
 #[cfg(feature = "serialization")]
 pub mod serialization;
 #[cfg(feature = "serialization")]
-pub use serialization::StringCachePlaceholder;
+pub use serialization::DeserializedCache;
 
 mod bumpalloc;
 
@@ -331,6 +352,18 @@ pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
 
+/// Utility function to get a reference to the main cache object for use with
+/// serialization.
+///
+/// # Examples
+/// ```
+/// # use ustr::{Ustr, ustr, ustr as u};
+/// # #[cfg(feature="serialization")]
+/// # {
+/// # unsafe { ustr::_clear_cache() };
+/// ustr("Send me to JSON and back");
+/// let json = serde_json::to_string(ustr::get_cache()).unwrap();
+/// # }
 pub fn get_cache() -> &'static Bins {
     &*STRING_CACHE
 }
@@ -385,7 +418,11 @@ pub fn string_cache_iter() -> StringCacheIterator {
         for a in &sc.old_allocs {
             allocs.push((a.ptr(), a.end()));
         }
-        allocs.push((sc.alloc.ptr(), sc.alloc.end()));
+        let ptr = sc.alloc.ptr();
+        let end = sc.alloc.end();
+        if ptr != end {
+            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
+        }
     }
 
     let current_ptr = allocs[0].0;
@@ -565,7 +602,7 @@ mod tests {
         unsafe {
             super::_clear_cache();
         }
-        let _: super::StringCachePlaceholder = serde_json::from_str(&json).unwrap();
+        let _: super::DeserializedCache = serde_json::from_str(&json).unwrap();
 
         // now check that we've got the same data in the cache still
         let mut hs_u = HashSet::new();
