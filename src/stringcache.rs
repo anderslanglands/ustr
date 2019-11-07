@@ -206,6 +206,7 @@ impl StringCache {
                 continue;
             }
 
+            // start of the entry is the hash
             let hash = *(*e as *const u64);
             let mut pos = (hash as usize) & new_mask;
             let mut dist = 0;
@@ -302,19 +303,17 @@ impl Iterator for StringCacheIterator {
             }
         }
 
-        // start of the StringCacheEntry is the hash
+        // Cast the current ptr to a StringCacheEntry and create the next string
+        // from it.
         unsafe {
-            let hash_ptr = self.current_ptr as *const u64;
-            let len_ptr = hash_ptr.offset(1) as *const usize;
-            let len = *len_ptr;
-            let char_ptr = len_ptr.offset(1) as *const u8;
+            let sce = &*(self.current_ptr as *const StringCacheEntry);
             // the next entry will be the size of the number of bytes in the
             // string, +1 for the null byte, rounded up to the alignment (8)
-            self.current_ptr = char_ptr
-                .offset(round_up_to(len + 1, std::mem::align_of::<StringCacheEntry>()) as isize);
+            self.current_ptr = sce.next_entry();
 
             // we know we're safe not to check here since we put valid UTF-8 in
-            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(char_ptr, len));
+            let s =
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(sce.char_ptr(), sce.len));
             Some(s)
         }
     }
@@ -325,4 +324,20 @@ impl Iterator for StringCacheIterator {
 struct StringCacheEntry {
     hash: u64,
     len: usize,
+}
+
+impl StringCacheEntry {
+    // get the pointer to the characters
+    pub(crate) fn char_ptr(&self) -> *const u8 {
+        // we know the chars are always directly after this struct in memory
+        // because that's the way they're laid out on initialization
+        unsafe { (self as *const StringCacheEntry).offset(1) as *const u8 }
+    }
+
+    // Calcualte the address of the next entry in the cache. This is a utility
+    // function to hide the pointer arithmetic in iterators
+    pub(crate) unsafe fn next_entry(&self) -> *const u8 {
+        self.char_ptr()
+            .offset(round_up_to(self.len + 1, std::mem::align_of::<StringCacheEntry>()) as isize)
+    }
 }
