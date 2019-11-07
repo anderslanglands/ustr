@@ -139,16 +139,15 @@ impl StringCache {
         // allocator and let the old one leak
         let capacity = self.alloc.capacity();
         let allocated = self.alloc.allocated();
-
-        // Ensure we won't overflow - this would be impossible anyway since
-        // we can't actually allocate that much memory
-        assert!(std::usize::MAX - allocated > alloc_size);
-
-        if alloc_size + allocated > capacity {
-            // just in case, make sure we'll definitely have enough storage
-            // for the new string.
-            assert!(capacity < std::usize::MAX / 2);
-            let new_capacity = (capacity * 2).max(alloc_size);
+        if alloc_size
+            .checked_add(allocated)
+            .expect("overflowed alloc_size + allocated")
+            > capacity
+        {
+            let new_capacity = capacity
+                .checked_mul(2)
+                .expect("capacity * 2 overflowed")
+                .max(alloc_size);
             let old_alloc = std::mem::replace(
                 &mut self.alloc,
                 LeakyBumpAlloc::new(new_capacity, std::mem::align_of::<StringCacheEntry>()),
