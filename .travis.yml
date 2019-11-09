@@ -2,8 +2,15 @@ dist: xenial
 
 language: rust
 
+os:
+  - linux
+  - osx
+  - windows
+
 rust:
   - stable
+  - beta
+  - nightly
 
 script:
   - env RUST_TEST_THREADS=1 cargo test --verbose --all
