@@ -5,7 +5,10 @@ language: rust
 os:
   - linux
   - osx
-  - windows
+
+osx_image:
+  - xcode11.2
+  - xcode10.3
 
 rust:
   - stable
