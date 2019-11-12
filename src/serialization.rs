@@ -1,7 +1,7 @@
 use super::*;
 
 use serde::{
-    de::{Deserialize, Deserializer, SeqAccess, Visitor},
+    de::{Deserialize, Deserializer, SeqAccess, Visitor, Error},
     ser::{Serialize, SerializeSeq, Serializer},
 };
 
@@ -61,5 +61,45 @@ impl<'de> Deserialize<'de> for DeserializedCache {
         D: Deserializer<'de>,
     {
         deserializer.deserialize_seq(BinsVisitor::new())
+    }
+}
+
+pub struct UstrVisitor {}
+impl UstrVisitor {
+    pub fn new() -> Self {
+        UstrVisitor {}
+    }
+}
+
+impl<'de> Visitor<'de> for UstrVisitor {
+    type Value = Ustr;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a &str")
+    }
+
+    fn visit_str<E>(self, s: & str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(Ustr::from(s))
+    }
+}
+
+impl<'de> Deserialize<'de> for Ustr {
+    fn deserialize<D>(deserializer: D) -> Result<Ustr, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(UstrVisitor::new())
+    }
+}
+
+impl Serialize for Ustr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
     }
 }

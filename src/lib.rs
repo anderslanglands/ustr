@@ -46,9 +46,9 @@
 //! ```
 //!
 //!
-//! By enabling the `"serialize"` feature you can also serialize the whole cache
-//! with serde. Since the cache is global, use the `ustr::DeserializedCache`
-//! dummy object to drive the deserialization.
+//! By enabling the `"serialization"` feature you can also serialize the whole
+//! cache with serde. Since the cache is global, use the
+//! `ustr::DeserializedCache` dummy object to drive the deserialization.
 //!
 //! ```rust
 //! # use ustr::{Ustr, ustr, ustr as u};
@@ -617,6 +617,19 @@ mod tests {
         // check that we have the exact same (unique) strings in the cache as in
         // the source data
         assert_eq!(diff.iter().count(), 0);
+    }
+
+    #[cfg(feature = "serialization")]
+    #[test]
+    fn serialization_ustr() {
+        use super::{ustr, Ustr};
+
+        let u_hello = ustr("hello");
+
+        let json = serde_json::to_string(&u_hello).unwrap();
+        let me_hello : Ustr = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(u_hello, me_hello);
     }
 }
 
