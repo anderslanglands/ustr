@@ -43,9 +43,17 @@ map.insert(u1, 17);
 assert_eq!(*map.get(&u1).unwrap(), 17);
 ```
 
-By enabling the `"serialize"` feature you can also serialize the whole cache
-with serde. Since the cache is global, use the `ustr::DeserializedCache`
-dummy object to drive the deserialization.
+By enabling the `"serialize"` feature you can serialize individual `Ustr`s or the whole cache with serde. 
+
+```rust 
+use ustr::{Ustr, ustr};
+let u_ser = ustr("serialization is fun!");
+let json = serde_json::to_string(&u_ser).unwrap();
+let u_de : Ustr = serde_json::from_str(&json).unwrap();
+assert_eq!(u_ser, u_de);
+```
+
+Since the cache is global, use the `ustr::DeserializedCache` dummy object to drive the deserialization.
 
 ```rust
 ustr("Send me to JSON and back");

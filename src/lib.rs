@@ -46,26 +46,29 @@
 //! ```
 //!
 //!
-//! By enabling the `"serialization"` feature you can also serialize the whole
-//! cache with serde. Since the cache is global, use the
-//! `ustr::DeserializedCache` dummy object to drive the deserialization.
-//!
+//! By enabling the `"serialize"` feature you can serialize individual `Ustr`s or the whole cache with serde. 
+//! 
+//! ```rust 
+//! use ustr::{Ustr, ustr};
+//! let u_ser = ustr("serialization is fun!");
+//! let json = serde_json::to_string(&u_ser).unwrap();
+//! let u_de : Ustr = serde_json::from_str(&json).unwrap();
+//! assert_eq!(u_ser, u_de);
+//! ```
+//! 
+//! Since the cache is global, use the `ustr::DeserializedCache` dummy object to drive the deserialization.
+//! 
 //! ```rust
-//! # use ustr::{Ustr, ustr, ustr as u};
-//! # #[cfg(feature="serialization")]
-//! # {
-//! # unsafe { ustr::_clear_cache() };
 //! ustr("Send me to JSON and back");
 //! let json = serde_json::to_string(ustr::get_cache()).unwrap();
-//!
+//! 
 //! // ... some time later ...
-//! # unsafe { ustr::_clear_cache() };
 //! let _: ustr::DeserializedCache = serde_json::from_str(&json).unwrap();
 //! assert_eq!(ustr::num_entries(), 1);
 //! assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON and back"]);
-//! # }
-//!
+//! 
 //! ```
+//! 
 //!
 //! ## Why?
 //! It is common in certain types of applications to use strings as identifiers,
