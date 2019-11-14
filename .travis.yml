@@ -16,4 +16,4 @@ rust:
   - nightly
 
 script:
-  - env RUST_TEST_THREADS=1 cargo test --verbose --all
+  - env RUST_TEST_THREADS=1 cargo test --verbose --all --features=serialization
