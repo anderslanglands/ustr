@@ -288,6 +288,12 @@ impl From<String> for Ustr {
     }
 }
 
+impl Default for Ustr {
+    fn default() -> Self {
+        Ustr::from("")
+    }
+}
+
 impl fmt::Display for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
