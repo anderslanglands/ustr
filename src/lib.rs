@@ -294,6 +294,13 @@ impl Default for Ustr {
     }
 }
 
+impl std::ops::Deref for Ustr {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
 impl fmt::Display for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
