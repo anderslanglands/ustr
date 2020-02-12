@@ -10,6 +10,11 @@ use string_interner::StringInterner;
 
 use ustr::*;
 
+#[cfg(not(feature = "parkinglot"))]
+use parking_lot::Mutex;
+#[cfg(feature = "spinlock")]
+use spin::Mutex;
+
 fn criterion_benchmark(c: &mut Criterion) {
     let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("data")
@@ -114,8 +119,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         c.bench_function(
             &format!("raft string-interner x {} threads", num_threads),
             move |b| {
-                let (tx1, rx1) =
-                    bounded::<Arc<spin::Mutex<StringInterner<string_interner::Sym>>>>(0);
+                let (tx1, rx1) = bounded::<Arc<Mutex<StringInterner<string_interner::Sym>>>>(0);
                 let (tx2, rx2) = bounded(0);
                 scope(|scope| {
                     for tt in 0..num_threads {
@@ -135,7 +139,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     b.iter(|| {
-                        let interner = Arc::new(spin::Mutex::new(StringInterner::default()));
+                        let interner = Arc::new(Mutex::new(StringInterner::default()));
                         for _ in 0..num_threads {
                             tx1.send(interner.clone()).unwrap();
                         }

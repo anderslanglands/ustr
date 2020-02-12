@@ -124,7 +124,11 @@
 //! ## Safety and Compatibility
 //! This crate has been tested on x86_64 ONLY. Compilation will fail with a
 //! static assert if the pointer size is not 64 bits.
+#[cfg(not(feature = "spinlock"))]
+use parking_lot::Mutex;
+#[cfg(feature = "spinlock")]
 use spin::Mutex;
+
 use std::fmt;
 
 mod stringcache;
@@ -328,7 +332,11 @@ pub fn total_allocated() -> usize {
     STRING_CACHE
         .0
         .iter()
-        .map(|sc| sc.lock().total_allocated())
+        .map(|sc| {
+            let t = sc.lock().total_allocated();
+
+            t
+        })
         .sum()
 }
 
@@ -337,7 +345,10 @@ pub fn total_capacity() -> usize {
     STRING_CACHE
         .0
         .iter()
-        .map(|sc| sc.lock().total_capacity())
+        .map(|sc| {
+            let t = sc.lock().total_capacity();
+            t
+        })
         .sum()
 }
 
@@ -388,7 +399,10 @@ pub fn num_entries() -> usize {
     STRING_CACHE
         .0
         .iter()
-        .map(|sc| sc.lock().num_entries())
+        .map(|sc| {
+            let t = sc.lock().num_entries();
+            t
+        })
         .sum()
 }
 
@@ -397,7 +411,10 @@ pub fn num_entries_per_bin() -> Vec<usize> {
     STRING_CACHE
         .0
         .iter()
-        .map(|sc| sc.lock().num_entries())
+        .map(|sc| {
+            let t = sc.lock().num_entries();
+            t
+        })
         .collect::<Vec<_>>()
 }
 
@@ -450,8 +467,6 @@ mod tests {
         assert_eq!(u_hello, "hello");
         let u_world = u("world");
         assert_eq!(u_world, String::from("world"));
-
-        println!("{}", std::mem::size_of::<spin::Mutex<super::StringCache>>());
     }
 
     #[test]

@@ -85,6 +85,11 @@ Ustrs are significantly faster to create than string-interner or string-cache. C
 
 ![raft bench](ustring_bench_raft.png)
 
+## Synchronization primitives
+ustr can be compiled using either parking_lot::Mutex (`features=parkinglot`) or spin:Mutex (`features=spinlock`) for syncronization. The default is parking_lot. Spinlocks have gotten bad press lately, but ustr still benches slightly faster using them. Use at your discretion.
+
+![mutex bench](mutex_comparison.png)
+
 # Testing
 Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache or segfaults caused by concurrently clearing the cache. Note that this cannot happen in user code if you don't call the hidden functions documented DO NOT CALL. If you do, well you were warned.
 
