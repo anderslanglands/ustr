@@ -5,6 +5,14 @@ authors = ["Anders Langlands <anderslanglands@gmail.com>"]
 edition = "2018"
 license = "BSD-2-Clause-Patent"
 description = "Fast, FFI-friendly string interning."
+documentation = "https://docs.rs/ustr/0.3.0/ustr/"
+repository = "https://github.com/anderslanglands/ustr"
+readme = "README.md"
+keywords = ["string", "interning", "FFI"]
+categories = ["caching", "data-structures"]
+
+[badges]
+travis-ci = {respository = "anderslanglands/ustr", branch="master"}
 
 [dependencies]
 lazy_static = "1.4.0"
