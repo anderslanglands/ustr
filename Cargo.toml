@@ -12,7 +12,7 @@ keywords = ["string", "interning", "FFI"]
 categories = ["caching", "data-structures"]
 
 [badges]
-travis-ci = {respository = "anderslanglands/ustr", branch="master"}
+travis-ci = {repository = "anderslanglands/ustr", branch="master"}
 
 [dependencies]
 lazy_static = "1.4.0"
