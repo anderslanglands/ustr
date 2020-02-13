@@ -6,7 +6,7 @@ Fast, FFI-friendly string interning.
 | [![Build Status]][travis] | [![Latest Version]][crates.io] | [![Docs Badge]][docs.rs] |
 
 [Build Status]: https://img.shields.io/travis/anderslanglands/ustr/master?style=for-the-badge
-[travis]: https://travis-ci.org/anderslanglands/ustr
+[travis]: https://travis-ci.com/anderslanglands/ustr
 [Latest Version]: https://img.shields.io/crates/v/ustr.svg?style=for-the-badge
 [crates.io]: https://crates.io/crates/ustr
 [Docs Badge]:https://img.shields.io/badge/docs.rs-rustdoc-green?style=for-the-badge
@@ -77,6 +77,25 @@ assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON 
 
 ```
 
+# Testing
+Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache or segfaults caused by concurrently clearing the cache. Note that this cannot happen in user code if you don't call the hidden functions documented DO NOT CALL. If you do, well you were warned.
+
+You also need to enable `--features=serialization` when running the tests to avoid some doctests demonstrating serde support failing.
+
+# Changelog
+## Changes since 0.3
+### Added Miri to CI tests
+Miri sanity-checks the unsafe parts of the code to guard against some types of UB.
+### Switched to [ahash](https://github.com/tkaitchuck/aHash) as the default hasher
+Ahash is a fast, non-cryptographic pure Rust hasher. Pure Rust is important to be able to run Miri and ahash benchmarks the fastest I could find. The old fasthash/cityhash is available by enabling `--features=hashcity`
+## Changes since 0.2
+### Serde support
+`Ustr` can now be serialized with Serde when enabling `--features=serialization`. The global string cache can also be serialized if you really want to.
+### Switched to parking_lot::Mutex as default synchronization
+Spinlocks have been getting a bad rap recently so the string cache now uses `parking_lot::Mutex` as the default synchronization primitive. `spin::Mutex` is still available behind the `--features=spinlock` feature gate if you really want that extra 5% speed.
+### Cleaned up unsafe
+Did a better job of documenting the invariants for the unsafe blocks and replaced some blind additions with checked_add() and friends to avoid potential (but very unlikely) overflow.
+
 # Compared to string-cache
 [string-cache](https://github.com/servo/string-cache) provides a global cache that can be created at compile time as well as at run time. Dynamic strings in the cache appear to be reference-counted so will be freed when they are no longer used, while `Ustr`s are never deleted. 
 
@@ -100,9 +119,6 @@ Ustrs are significantly faster to create than string-interner or string-cache. C
 ustr can be compiled using either parking_lot::Mutex (`features=parkinglot`) or spin:Mutex (`features=spinlock`) for syncronization. The default is parking_lot. Spinlocks have gotten bad press lately, but ustr still benches slightly faster using them. Use at your discretion.
 
 ![mutex bench](mutex_comparison.png)
-
-# Testing
-Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache or segfaults caused by concurrently clearing the cache. Note that this cannot happen in user code if you don't call the hidden functions documented DO NOT CALL. If you do, well you were warned.
 
 # Why?
 It is common in certain types of applications to use strings as identifiers, but not really do any processing with them. To paraphrase from OIIO's ustring documentation...
@@ -133,7 +149,7 @@ This crate has been tested (a little) on x86_64 ONLY. It will not compile on arc
 ## Licence
 BSD+ License
 
-Copyright (c) 2019 Anders Langlands
+Copyright ©2019-2020 Anders Langlands
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
