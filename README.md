@@ -1,5 +1,13 @@
 # Ustr
 Fast, FFI-friendly string interning. 
+[![Build Status]][travis] [![Latest Version]][crates.io]]
+
+[Build Status]: https://img.shields.io/travis/anderslanglands/ustr/master?style=for-the-badge
+[travis]: https://travis-ci.org/anderslanglands/ustr
+[Latest Version]: https://img.shields.io/crates/v/ustr.svg?style=for-the-badge
+[crates.io]: https://crates.io/crates/ustr
+[Docs Badge]:https://img.shields.io/badge/docs.rs-rustdoc-green?style=for-the-badge
+[docs.rs]:https://docs.rs/ustr
 
 A `Ustr` (**U**nique **str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for: 
 * Extremely fast string assignment and comparisons 
