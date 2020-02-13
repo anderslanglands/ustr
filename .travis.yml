@@ -1,20 +1,49 @@
-dist: xenial
+# dist: xenial
 
 language: rust
+rust: nightly
 
-os:
-  - linux
-  - osx
+matrix:
+  fast_finish: true
+  include:
+  # Tier 1 targets:
+    - name: "x86_64-unknown-linux-gnu"
+      env: TARGET=x86_64-unknown-linux-gnu
+    - name: "x86_64-unknown-linux-gnu (beta)"
+      rust: beta
+      env: TARGET=x86_64-unknown-linux-gnu
+    - name: "x86_64-unknown-linux-gnu (stable)"
+      rust: stable
+      env: TARGET=x86_64-unknown-linux-gnu
+    - name: "i686-unknown-linux-gnu"
+      env: TARGET=i686-unknown-linux-gnu CROSS=1
+    - name: "x86_64-apple-darwin-10.3"
+      env: TARGET=x86_64-apple-darwin
+      os: osx
+      osx_image: xcode10.3
+    - name: "x86_64-apple-darwin-11.2"
+      env: TARGET=x86_64-apple-darwin
+      os: osx
+      osx_image: xcode11.2
+    - name: "x86_64-pc-windows-msvc"
+      env: TARGET=x86_64-pc-windows-msvc
+      os: windows
+    - name: "x86_64-pc-windows-gnu"
+      env: TARGET=x86_64-pc-windows-gnu CROSS=1
 
-osx_image:
-  - xcode11.2
-  - xcode10.3
+# os:
+#   - linux
+#   - osx
 
-rust:
-  - stable
-  - beta
-  - nightly
+# osx_image:
+#   - xcode11.2
+#   - xcode10.3
 
-script:
-  - env RUST_TEST_THREADS=1 cargo test --verbose --all --features=serialization
-  - env RUST_TEST_THREADS=1 cargo +nightly miri test -- -Zmiri-ignore-leaks
+# rust:
+#   - stable
+#   - beta
+#   - nightly
+
+# script:
+#   - env RUST_TEST_THREADS=1 cargo test --verbose --all --features=serialization
+#   - env RUST_TEST_THREADS=1 cargo +nightly miri test -- -Zmiri-ignore-leaks
