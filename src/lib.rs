@@ -169,7 +169,14 @@ impl Ustr {
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
     pub fn from(string: &str) -> Ustr {
+        #[cfg(feature = "hashcity")]
         let hash = fasthash::city::hash64(string.as_bytes());
+        #[cfg(not(feature = "hashcity"))]
+        let hash = {
+            let mut hasher = ahash::AHasher::new_with_keys(123, 456);
+            hasher.write(string.as_bytes());
+            hasher.finish()
+        };
         let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
             char_ptr: sc.insert(string, hash),
@@ -505,6 +512,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn blns() {
         use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
@@ -557,6 +565,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn raft() {
         use super::ustr as u;
         use std::sync::Arc;

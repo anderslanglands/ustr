@@ -17,3 +17,4 @@ rust:
 
 script:
   - env RUST_TEST_THREADS=1 cargo test --verbose --all --features=serialization
+  - env RUST_TEST_THREADS=1 cargo +nightly miri test -- -Zmiri-ignore-leaks
