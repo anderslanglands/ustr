@@ -1,6 +1,9 @@
 # Ustr
 Fast, FFI-friendly string interning. 
-[![Build Status]][travis] [![Latest Version]][crates.io] [![Docs Badge]][docs.rs]
+
+| | | |
+|-|-|-|
+| [![Build Status]][travis] | [![Latest Version]][crates.io] | [![Docs Badge]][docs.rs] |
 
 [Build Status]: https://img.shields.io/travis/anderslanglands/ustr/master?style=for-the-badge
 [travis]: https://travis-ci.org/anderslanglands/ustr
