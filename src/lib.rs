@@ -598,6 +598,28 @@ mod tests {
         }
     }
 
+    // This test is to have miri check the allocation code paths, but miri
+    // can't open files so it's not usable right now
+    // #[test]
+    // fn words() {
+    //     use super::ustr as u;
+    //     use std::sync::Arc;
+
+    //     let path = std::path::Path::new("/usr/share/dict/words");
+    //     let wordlist = std::fs::read_to_string(path).unwrap();
+    //     let wordlist = Arc::new(
+    //         wordlist
+    //             .split_whitespace()
+    //             .collect::<Vec<_>>()
+    //             .chunks(7)
+    //             .cycle()
+    //             .take(4_000_000)
+    //             .enumerate()
+    //             .map(|(i, s)| u(&format!("{}{}", i, s.join("-"))))
+    //             .collect::<Vec<_>>(),
+    //     );
+    // }
+
     #[cfg(feature = "serialization")]
     #[test]
     fn serialization() {
