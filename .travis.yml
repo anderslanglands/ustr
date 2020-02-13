@@ -8,8 +8,8 @@ matrix:
   include:
   # Miri
   - name: "miri"
-      env: TARGET=x86_64-unknown-linux-gnu
-      script: sh ci/miri.sh
+    env: TARGET=x86_64-unknown-linux-gnu
+    script: sh miri.sh
   # Tier 1 targets:
     - name: "x86_64-unknown-linux-gnu"
       env: TARGET=x86_64-unknown-linux-gnu
