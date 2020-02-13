@@ -7,9 +7,9 @@ matrix:
   fast_finish: true
   include:
   # Miri
-  - name: "miri"
-    env: TARGET=x86_64-unknown-linux-gnu
-    script: sh miri.sh
+    - name: "miri"
+      env: TARGET=x86_64-unknown-linux-gnu
+      script: sh miri.sh
   # Tier 1 targets:
     - name: "x86_64-unknown-linux-gnu"
       env: TARGET=x86_64-unknown-linux-gnu
