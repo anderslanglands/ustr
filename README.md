@@ -82,6 +82,9 @@ Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due
 
 You also need to enable `--features=serialization` when running the tests to avoid some doctests demonstrating serde support failing.
 
+# Calling from C/C++
+If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
+
 # Changelog
 ## Changes since 0.3
 ### Added Miri to CI tests
