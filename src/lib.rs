@@ -250,7 +250,10 @@ impl Ustr {
         // 1) hash is a u64 stored 2*u64 aligned usize bytes before char_ptr
         // This is guaranteed by StringCache::insert()
         unsafe {
-            let hash_ptr = (self.char_ptr as *const u64).offset(-2isize);
+            // first offset 1 usize to find the length
+            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
+            // then offset 1 u64 to find the hash
+            let hash_ptr = (len_ptr as *const u64).offset(-1isize);
             std::ptr::read(hash_ptr)
         }
     }
