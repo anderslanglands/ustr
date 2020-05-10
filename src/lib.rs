@@ -142,8 +142,8 @@ mod bumpalloc;
 
 mod hash;
 pub use hash::*;
-use std::hash::{Hash, Hasher};
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 /// A handle representing a string in the global string cache.
 ///
@@ -158,7 +158,7 @@ pub struct Ustr {
 
 impl PartialOrd for Ustr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.as_str().partial_cmp(other.as_str())        
+        self.as_str().partial_cmp(other.as_str())
     }
 }
 
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    // #[cfg_attr(miri, ignore)]
     fn blns() {
         use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    // #[cfg_attr(miri, ignore)]
     fn raft() {
         use super::ustr as u;
         use std::sync::Arc;
