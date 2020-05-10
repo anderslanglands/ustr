@@ -41,9 +41,6 @@ pub(crate) struct StringCache {
     _pad: [u32; 3],
 }
 
-#[cfg(not(target_pointer_width = "64"))]
-const POINTER_SIZE_ERROR: () = "ustr only works on 64-bit architectures";
-
 // TODO: make these configurable?
 // Initial size of the StringCache table
 pub(crate) const INITIAL_CAPACITY: usize = 1 << 20;
@@ -321,9 +318,9 @@ impl Iterator for StringCacheIterator {
 
 #[repr(C)]
 #[derive(Clone)]
-struct StringCacheEntry {
-    hash: u64,
-    len: usize,
+pub(crate) struct StringCacheEntry {
+    pub(crate) hash: u64,
+    pub(crate) len: usize,
 }
 
 impl StringCacheEntry {
