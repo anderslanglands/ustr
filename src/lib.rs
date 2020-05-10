@@ -143,16 +143,23 @@ mod bumpalloc;
 mod hash;
 pub use hash::*;
 use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
 
 /// A handle representing a string in the global string cache.
 ///
 /// To use, create one using `Ustr::from` or the `ustr` function. You can freely
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct Ustr {
     char_ptr: *const u8,
+}
+
+impl PartialOrd for Ustr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.as_str().partial_cmp(other.as_str())        
+    }
 }
 
 impl Ustr {
@@ -696,6 +703,16 @@ mod tests {
         let me_hello: Ustr = serde_json::from_str(&json).unwrap();
 
         assert_eq!(u_hello, me_hello);
+    }
+
+    #[test]
+    fn partial_ord() {
+        use super::ustr;
+        let str_a = ustr("aaa");
+        let str_z = ustr("zzz");
+        let str_k = ustr("kkk");
+        assert!(str_a < str_k);
+        assert!(str_k < str_z);
     }
 }
 
