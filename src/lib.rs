@@ -122,8 +122,12 @@
 //!     testing, but lots of more complex string manipulation.
 //!
 //! ## Safety and Compatibility
-//! This crate has been tested on x86_64 ONLY. Compilation will fail with a
-//! static assert if the pointer size is not 64 bits.
+//! This crate contains a significant amount of unsafe but usage has been checked
+//! and is well-documented. It is also run through Miri as part of the CI process.
+//! I use it regularly on 64-bit systems, and it has passed Miri on a 32-bit
+//! system as well, bit 32-bit is not checked regularly. If you want to use it
+//! on 32-bit, please make sure to run Miri and open and issue if you find any
+//! problems.
 #[cfg(not(feature = "spinlock"))]
 use parking_lot::Mutex;
 #[cfg(feature = "spinlock")]
@@ -156,6 +160,9 @@ pub struct Ustr {
     char_ptr: *const u8,
 }
 
+/// Defer to &str for equality - lexicographic ordering will be slower than
+/// pointer comparison, but much less surprising if you use Ustrs as keys in
+/// e.g. a BTreeMap
 impl PartialOrd for Ustr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.as_str().partial_cmp(other.as_str())
@@ -240,29 +247,27 @@ impl Ustr {
         self.char_ptr as *const std::os::raw::c_char
     }
 
+    fn as_string_cache_entry(&self) -> &StringCacheEntry {
+        unsafe {
+            // first offset 1 usize to find the length
+            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
+            // then offset 1 u64 to skip over the hash and arrive at the
+            // beginning of the StringCacheEntry struct
+            let sce_ptr = (len_ptr as *const u64).offset(-1isize) as *const StringCacheEntry;
+            // The allocator guarantees that the alignment is correct and that
+            // this pointer is non-null
+            sce_ptr.as_ref().unwrap()
+        }
+    }
+
     /// Get the length (in bytes) of this string.
     pub fn len(&self) -> usize {
-        // This is safe if:
-        // 1) len is a usize stored usize-aligned usize bytes before char_ptr
-        // This is guaranteed by StringCache::insert()
-        unsafe {
-            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
-            std::ptr::read(len_ptr)
-        }
+        self.as_string_cache_entry().len
     }
 
     /// Get the precomputed hash for this string
     pub fn precomputed_hash(&self) -> u64 {
-        // This is safe if:
-        // 1) hash is a u64 stored 2*u64 aligned usize bytes before char_ptr
-        // This is guaranteed by StringCache::insert()
-        unsafe {
-            // first offset 1 usize to find the length
-            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
-            // then offset 1 u64 to find the hash
-            let hash_ptr = (len_ptr as *const u64).offset(-1isize);
-            std::ptr::read(hash_ptr)
-        }
+        self.as_string_cache_entry().hash
     }
 
     /// Get an owned String copy of this string.
@@ -535,7 +540,8 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(miri, ignore)]
+    // We have to disable miri here as it's far too slow unfortunately
+    #[cfg_attr(miri, ignore)]
     fn blns() {
         use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
@@ -543,10 +549,11 @@ mod tests {
         // clear the cache first or our results will be wrong
         unsafe { super::_clear_cache() };
 
-        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("data")
-            .join("blns.txt");
-        let blns = std::fs::read_to_string(path).unwrap();
+        // let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        //     .join("data")
+        //     .join("blns.txt");
+        // let blns = std::fs::read_to_string(path).unwrap();
+        let blns = include_str!("../data/blns.txt");
 
         let mut hs = HashSet::new();
         for s in blns.split_whitespace() {
@@ -588,15 +595,17 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(miri, ignore)]
+    // We have to disable miri here as it's far too slow unfortunately
+    #[cfg_attr(miri, ignore)]
     fn raft() {
         use super::ustr as u;
         use std::sync::Arc;
 
-        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("data")
-            .join("raft-large-directories.txt");
-        let raft = std::fs::read_to_string(path).unwrap();
+        // let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        //     .join("data")
+        //     .join("raft-large-directories.txt");
+        // let raft = std::fs::read_to_string(path).unwrap();
+        let raft = include_str!("../data/raft-large-directories.txt");
         let raft = Arc::new(
             raft.split_whitespace()
                 .collect::<Vec<_>>()

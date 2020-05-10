@@ -86,6 +86,13 @@ You also need to enable `--features=serialization` when running the tests to avo
 If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
 # Changelog
+## Changes since 0.4
+### 32-bit support added
+Removed the restriction to 64-bit systems and fixed a bug relating to pointer maths. Thanks to agaussman for bringing it up: https://github.com/anderslanglands/ustr/issues/8
+### Miri leak checks re-enabled
+Thanks to RalfJung for pointing out that Miri now ignores "leaks" from statics: https://github.com/anderslanglands/ustr/pull/9
+### PartialOrd is now lexicographic
+Thanks to macprog-guy for the PR implementing PartialOrd by deferring to &str. This will be slower than the previous derived implementation which just did a pointer comparison, but is much less surprising: https://github.com/anderslanglands/ustr/pull/10
 ## Changes since 0.3
 ### Added Miri to CI tests
 Miri sanity-checks the unsafe parts of the code to guard against some types of UB.
@@ -147,7 +154,9 @@ On the whole, `Ustr`s are a really great string representation
 - if you don't need to do a lot of string assignment or equality testing, but lots of more complex string manipulation.
 
 ## Safety and Compatibility
-This crate has been tested (a little) on x86_64 ONLY. It will not compile on architectures where the pointer size is no 64 bits.
+This crate contains a significant amount of unsafe but usage has been checked and is well-documented. It is also run through Miri as part of the CI process. 
+
+I use it regularly on 64-bit systems, and it has passed Miri on a 32-bit system as well, bit 32-bit is not checked regularly. If you want to use it on 32-bit, please make sure to run Miri and open and issue if you find any problems.
 
 ## Licence
 BSD+ License
