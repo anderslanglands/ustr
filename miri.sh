@@ -13,4 +13,4 @@ rustup component add miri
 cargo miri setup
 
 export RUST_TEST_THREADS=1
-cargo miri test -- -Zmiri-ignore-leaks
+cargo miri test
