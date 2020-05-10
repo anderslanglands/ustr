@@ -58,7 +58,7 @@ impl LeakyBumpAlloc {
     }
 
     pub fn allocated(&self) -> usize {
-        (self.end as usize - self.ptr as usize)
+        self.end as usize - self.ptr as usize
     }
 
     pub fn capacity(&self) -> usize {
