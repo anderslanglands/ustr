@@ -729,6 +729,17 @@ mod tests {
         assert!(str_a < str_k);
         assert!(str_k < str_z);
     }
+
+    fn takes_into_str<'a, S: Into<&'a str>>(s: S) -> &'a str {
+        s.into()
+    }
+
+    #[test]
+    fn test_into_str() {
+        use super::ustr;
+
+        assert_eq!("converted", takes_into_str(ustr("converted")));
+    }
 }
 
 lazy_static::lazy_static! {
