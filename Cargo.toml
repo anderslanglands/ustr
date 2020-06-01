@@ -1,11 +1,11 @@
 [package]
 name = "ustr"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Anders Langlands <anderslanglands@gmail.com>"]
 edition = "2018"
 license = "BSD-2-Clause-Patent"
 description = "Fast, FFI-friendly string interning."
-documentation = "https://docs.rs/ustr/0.3.0/ustr/"
+documentation = "https://docs.rs/ustr/0.6.0/ustr/"
 repository = "https://github.com/anderslanglands/ustr"
 readme = "README.md"
 keywords = ["string", "interning", "FFI"]

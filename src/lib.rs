@@ -206,7 +206,7 @@ impl Ustr {
     /// let words: Vec<&str> = u_fox.as_str().split_whitespace().collect();
     /// assert_eq!(words, ["the", "quick", "brown", "fox"]);
     /// ```
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'static str {
         // This is safe if:
         // 1) self.char_ptr points to a valid address
         // 2) len is a usize stored usize aligned usize bytes before char_ptr
@@ -305,6 +305,12 @@ impl AsRef<str> for Ustr {
 impl From<&str> for Ustr {
     fn from(s: &str) -> Ustr {
         Ustr::from(s)
+    }
+}
+
+impl From<Ustr> for &'static str {
+    fn from(s: Ustr) -> &'static str {
+        s.as_str()
     }
 }
 
