@@ -1,6 +1,6 @@
 [package]
 name = "ustr"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Anders Langlands <anderslanglands@gmail.com>"]
 edition = "2018"
 license = "BSD-2-Clause-Patent"

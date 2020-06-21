@@ -253,7 +253,8 @@ impl Ustr {
             let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
             // then offset 1 u64 to skip over the hash and arrive at the
             // beginning of the StringCacheEntry struct
-            let sce_ptr = (len_ptr as *const u64).offset(-1isize) as *const StringCacheEntry;
+            let sce_ptr = (len_ptr as *const u64).offset(-1isize)
+                as *const StringCacheEntry;
             // The allocator guarantees that the alignment is correct and that
             // this pointer is non-null
             sce_ptr.as_ref().unwrap()
@@ -667,9 +668,10 @@ mod tests {
         // clear the cache first or our results will be wrong
         unsafe { super::_clear_cache() };
 
-        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("data")
-            .join("blns.txt");
+        let path =
+            std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+                .join("data")
+                .join("blns.txt");
         let blns = std::fs::read_to_string(path).unwrap();
 
         let mut hs = HashSet::new();
@@ -728,6 +730,19 @@ mod tests {
         let str_k = ustr("kkk");
         assert!(str_a < str_k);
         assert!(str_k < str_z);
+    }
+
+    #[test]
+    fn ord() {
+        use super::ustr;
+        let u_apple = ustr("apple");
+        let u_bravo = ustr("bravo");
+        let u_charlie = ustr("charlie");
+        let u_delta = ustr("delta");
+
+        let mut v = vec![u_delta, u_bravo, u_charlie, u_apple];
+        v.sort();
+        assert_eq!(v, vec![u_apple, u_bravo, u_charlie, u_delta]);
     }
 
     fn takes_into_str<'a, S: Into<&'a str>>(s: S) -> &'a str {
