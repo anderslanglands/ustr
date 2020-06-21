@@ -86,6 +86,10 @@ You also need to enable `--features=serialization` when running the tests to avo
 If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
 # Changelog
+## Changes since 0.6
+### Derive Ord for Ustr
+So now you can sort a Vec of Ustr's lexicographically.
+
 ## Changes since 0.5
 ### Added From<Ustr> for &str
 This impl makes it easier to pass a Ustr to methods expecting an Into<&str>
