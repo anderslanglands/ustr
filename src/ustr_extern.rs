@@ -1,8 +1,8 @@
 use ustr::Ustr;
 
 #[no_mangle]
-pub extern "C" fn ustr(chars: *const c_char) -> Ustr {
-    let cs = unsafe { CStr::from_ptr(chars).to_string_lossy() };
+pub extern "C" fn ustr(chars: *const std::os::raw::c_char) -> Ustr {
+    let cs = unsafe { std::ffi::CStr::from_ptr(chars).to_string_lossy() };
     Ustr::from(&cs)
 }
 
