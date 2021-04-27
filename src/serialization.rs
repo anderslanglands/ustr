@@ -1,7 +1,7 @@
 use super::*;
 
 use serde::{
-    de::{Deserialize, Deserializer, SeqAccess, Visitor, Error},
+    de::{Deserialize, Deserializer, Error, SeqAccess, Visitor},
     ser::{Serialize, SerializeSeq, Serializer},
 };
 
@@ -16,9 +16,7 @@ impl Serialize for Bins {
             match seq.serialize_element(s) {
                 Ok(_) => (),
                 Err(e) => {
-                    panic!(
-                        format!("Error serializing \"{}\": {}", s, e)
-                    );
+                    panic!("Error serializing \"{}\": {}", s, e);
                 }
             }
         }
@@ -78,7 +76,7 @@ impl<'de> Visitor<'de> for UstrVisitor {
         formatter.write_str("a &str")
     }
 
-    fn visit_str<E>(self, s: & str) -> Result<Self::Value, E>
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
     where
         E: Error,
     {

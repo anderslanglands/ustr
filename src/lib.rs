@@ -148,6 +148,7 @@ mod hash;
 pub use hash::*;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::ptr::NonNull;
 
 /// A handle representing a string in the global string cache.
 ///
@@ -157,7 +158,7 @@ use std::hash::{Hash, Hasher};
 #[derive(Copy, Clone, PartialEq, Ord)]
 #[repr(transparent)]
 pub struct Ustr {
-    char_ptr: *const u8,
+    char_ptr: NonNull<u8>,
 }
 
 /// Defer to &str for equality - lexicographic ordering will be slower than
@@ -193,7 +194,10 @@ impl Ustr {
         };
         let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
-            char_ptr: sc.insert(string, hash),
+            // SAFETY: sc.insert does not give back a null pointer
+            char_ptr: unsafe {
+                NonNull::new_unchecked(sc.insert(string, hash) as *mut _)
+            },
         }
     }
 
@@ -214,9 +218,10 @@ impl Ustr {
         // All these are guaranteed by StringCache::insert() and by the fact
         // we can only construct a Ustr from a valid &str.
         unsafe {
-            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
+            let len_ptr =
+                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                self.char_ptr,
+                self.char_ptr.as_ptr(),
                 std::ptr::read(len_ptr),
             ))
         }
@@ -244,7 +249,7 @@ impl Ustr {
     /// The string is **immutable**. That means that if you modify it across the
     /// FFI boundary then all sorts of terrible things will happen.
     pub fn as_char_ptr(&self) -> *const std::os::raw::c_char {
-        self.char_ptr as *const std::os::raw::c_char
+        self.char_ptr.as_ptr() as *const std::os::raw::c_char
     }
 
     /// Get this ustr as a CStr
@@ -266,7 +271,8 @@ impl Ustr {
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
         unsafe {
             // first offset 1 usize to find the length
-            let len_ptr = (self.char_ptr as *const usize).offset(-1isize);
+            let len_ptr =
+                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             // then offset 1 u64 to skip over the hash and arrive at the
             // beginning of the StringCacheEntry struct
             let sce_ptr = (len_ptr as *const u64).offset(-1isize)
