@@ -244,6 +244,7 @@ impl Ustr {
     /// The string is **immutable**. That means that if you modify it across the
     /// FFI boundary then all sorts of terrible things will happen.
     pub unsafe fn as_char_ptr(&self) -> *const std::os::raw::c_char {
+    pub fn as_char_ptr(&self) -> *const std::os::raw::c_char {
         self.char_ptr as *const std::os::raw::c_char
     }
 
