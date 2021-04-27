@@ -690,10 +690,12 @@ mod tests {
         // clear the cache first or our results will be wrong
         unsafe { super::_clear_cache() };
 
-        let path =
-            std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("data")
-                .join("blns.txt");
+        let path = std::path::Path::new(
+            &std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR not set"),
+        )
+        .join("data")
+        .join("blns.txt");
         let blns = std::fs::read_to_string(path).unwrap();
 
         let mut hs = HashSet::new();
