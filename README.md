@@ -7,9 +7,9 @@ Fast, FFI-friendly string interning.
 
 [Build Status]: https://img.shields.io/travis/anderslanglands/ustr/master?style=for-the-badge
 [travis]: https://travis-ci.com/anderslanglands/ustr
-[Latest Version]: https://img.shields.io/crates/v/ustr.svg?style=for-the-badge
+[Latest Version]: https://img.shields.io/crates/v/ustr?style=for-the-badge
 [crates.io]: https://crates.io/crates/ustr
-[Docs Badge]:https://img.shields.io/badge/docs.rs-rustdoc-green?style=for-the-badge
+[Docs Badge]: https://img.shields.io/docsrs/ustr?style=for-the-badge
 [docs.rs]:https://docs.rs/ustr
 
 A `Ustr` (**U**nique **str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for: 
@@ -86,6 +86,17 @@ You also need to enable `--features=serialization` when running the tests to avo
 If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
 # Changelog
+## Changes since 0.7
+### Update dependencies
+The versions of `parking_lot` and `ahash` have been updated
+
+### Space optimization with NonNull
+The internal pointer is now a NonNull to take advanatge of layout optimizations in Option etc.
+
+### Add `as_cstr()` method
+Added `as_cstr(&self) -> std::ffi::CStr` to make it easier to interface with APIs that rely on CStr
+
+
 ## Changes since 0.6
 ### Derive Ord for Ustr
 So now you can sort a Vec of Ustr's lexicographically.
