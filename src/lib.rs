@@ -243,9 +243,24 @@ impl Ustr {
     /// straight along with no checking.
     /// The string is **immutable**. That means that if you modify it across the
     /// FFI boundary then all sorts of terrible things will happen.
-    pub unsafe fn as_char_ptr(&self) -> *const std::os::raw::c_char {
     pub fn as_char_ptr(&self) -> *const std::os::raw::c_char {
         self.char_ptr as *const std::os::raw::c_char
+    }
+
+    /// Get this ustr as a CStr
+    ///
+    /// This is useful for passing to APIs (like ash) that use CStr
+    ///
+    /// # Safety
+    /// This function by itself is safe as the pointer and length are
+    /// guaranteed to be valid. All the same caveats for the use of the CStr
+    /// as given in the CSstr docs apply
+    pub fn as_cstr(&self) -> &std::ffi::CStr {
+        unsafe {
+            std::ffi::CStr::from_bytes_with_nul_unchecked(
+                std::slice::from_raw_parts(self.as_ptr(), self.len() + 1),
+            )
+        }
     }
 
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
