@@ -12,5 +12,7 @@ rustup default "$MIRI_NIGHTLY"
 rustup component add miri
 cargo miri setup
 
+export CARGO_MANIFEST_DIR=$PWD
+
 export RUST_TEST_THREADS=1
 cargo miri test --features=serialization
