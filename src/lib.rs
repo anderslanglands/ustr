@@ -681,7 +681,7 @@ mod tests {
     //     );
     // }
 
-    #[cfg(feature = "serialization")]
+    #[cfg(all(feature = "serialization", not(miri)))]
     #[test]
     fn serialization() {
         use super::{string_cache_iter, ustr as u};
@@ -733,7 +733,7 @@ mod tests {
         assert_eq!(diff.iter().count(), 0);
     }
 
-    #[cfg(feature = "serialization")]
+    #[cfg(all(feature = "serialization", not(miri)))]
     #[test]
     fn serialization_ustr() {
         use super::{ustr, Ustr};
