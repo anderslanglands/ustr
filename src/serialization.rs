@@ -27,6 +27,7 @@ impl Serialize for Bins {
 pub struct BinsVisitor {}
 
 impl BinsVisitor {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         BinsVisitor {}
     }
@@ -64,6 +65,7 @@ impl<'de> Deserialize<'de> for DeserializedCache {
 
 pub struct UstrVisitor {}
 impl UstrVisitor {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         UstrVisitor {}
     }

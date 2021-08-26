@@ -156,6 +156,7 @@ use std::ptr::NonNull;
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
 #[derive(Copy, Clone, PartialEq, Ord)]
+#[allow(clippy::derive_ord_xor_partial_ord)]
 #[repr(transparent)]
 pub struct Ustr {
     char_ptr: NonNull<u8>,
@@ -195,10 +196,23 @@ impl Ustr {
         let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
             // SAFETY: sc.insert does not give back a null pointer
-            char_ptr: unsafe {
-                NonNull::new_unchecked(sc.insert(string, hash) as *mut _)
-            },
+            char_ptr: unsafe { NonNull::new_unchecked(sc.insert(string, hash) as *mut _) },
         }
+    }
+
+    pub fn from_existing(string: &str) -> Option<Ustr> {
+        #[cfg(feature = "hashcity")]
+        let hash = fasthash::city::hash64(string.as_bytes());
+        #[cfg(not(feature = "hashcity"))]
+        let hash = {
+            let mut hasher = ahash::AHasher::new_with_keys(123, 456);
+            hasher.write(string.as_bytes());
+            hasher.finish()
+        };
+        let sc = STRING_CACHE.0[whichbin(hash)].lock();
+        sc.get_existing(string, hash).map(|ptr| Ustr {
+            char_ptr: unsafe { NonNull::new_unchecked(ptr as *mut _) },
+        })
     }
 
     /// Get the cached string as a &str
@@ -218,8 +232,7 @@ impl Ustr {
         // All these are guaranteed by StringCache::insert() and by the fact
         // we can only construct a Ustr from a valid &str.
         unsafe {
-            let len_ptr =
-                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
+            let len_ptr = (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                 self.char_ptr.as_ptr(),
                 std::ptr::read(len_ptr),
@@ -262,21 +275,20 @@ impl Ustr {
     /// as given in the CSstr docs apply
     pub fn as_cstr(&self) -> &std::ffi::CStr {
         unsafe {
-            std::ffi::CStr::from_bytes_with_nul_unchecked(
-                std::slice::from_raw_parts(self.as_ptr(), self.len() + 1),
-            )
+            std::ffi::CStr::from_bytes_with_nul_unchecked(std::slice::from_raw_parts(
+                self.as_ptr(),
+                self.len() + 1,
+            ))
         }
     }
 
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
         unsafe {
             // first offset 1 usize to find the length
-            let len_ptr =
-                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
+            let len_ptr = (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             // then offset 1 u64 to skip over the hash and arrive at the
             // beginning of the StringCacheEntry struct
-            let sce_ptr = (len_ptr as *const u64).offset(-1isize)
-                as *const StringCacheEntry;
+            let sce_ptr = (len_ptr as *const u64).offset(-1isize) as *const StringCacheEntry;
             // The allocator guarantees that the alignment is correct and that
             // this pointer is non-null
             sce_ptr.as_ref().unwrap()
@@ -286,6 +298,11 @@ impl Ustr {
     /// Get the length (in bytes) of this string.
     pub fn len(&self) -> usize {
         self.as_string_cache_entry().len
+    }
+
+    /// Returns true if the length is zero.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Get the precomputed hash for this string
@@ -370,6 +387,7 @@ impl fmt::Debug for Ustr {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
+#[allow(clippy::derive_hash_xor_eq)]
 impl Hash for Ustr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
@@ -429,6 +447,22 @@ pub fn total_capacity() -> usize {
 /// ```
 pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
+}
+
+/// Create a new Ustr from the given &str but only if it already exists in the string cache.
+///
+/// ```
+/// use ustr::{ustr, existing_ustr};
+/// # unsafe { ustr::_clear_cache() };
+///
+/// let u1 = existing_ustr("the quick brown fox");
+/// let u2 = ustr("the quick brown fox");
+/// let u3 = existing_ustr("the quick brown fox");
+/// assert_eq!(u1, None);
+/// assert_eq!(u3, Some(u2));
+/// ```
+pub fn existing_ustr(s: &str) -> Option<Ustr> {
+    Ustr::from_existing(s)
 }
 
 /// Utility function to get a reference to the main cache object for use with
@@ -544,7 +578,7 @@ mod tests {
         let _empty = u("");
         let empty = u("");
 
-        assert_eq!(empty.as_str().is_empty(), true);
+        assert!(empty.as_str().is_empty());
         assert_eq!(super::num_entries(), 1);
     }
 
@@ -609,7 +643,7 @@ mod tests {
 
         // check that we have the exact same (unique) strings in the cache as in
         // the source data
-        assert_eq!(diff.iter().count(), 0);
+        assert_eq!(diff.len(), 0);
 
         let nbs = super::num_entries_per_bin();
         println!("{:?}", nbs);
@@ -691,8 +725,7 @@ mod tests {
         unsafe { super::_clear_cache() };
 
         let path = std::path::Path::new(
-            &std::env::var("CARGO_MANIFEST_DIR")
-                .expect("CARGO_MANIFEST_DIR not set"),
+            &std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"),
         )
         .join("data")
         .join("blns.txt");
@@ -730,7 +763,7 @@ mod tests {
 
         // check that we have the exact same (unique) strings in the cache as in
         // the source data
-        assert_eq!(diff.iter().count(), 0);
+        assert_eq!(diff.len(), 0);
     }
 
     #[cfg(all(feature = "serialization", not(miri)))]
@@ -778,6 +811,15 @@ mod tests {
         use super::ustr;
 
         assert_eq!("converted", takes_into_str(ustr("converted")));
+    }
+
+    #[test]
+    fn test_existing_ustr() {
+        use super::{existing_ustr, ustr};
+        assert_eq!(existing_ustr("hello world!"), None);
+        let s1 = ustr("hello world!");
+        let s2 = existing_ustr("hello world!");
+        assert_eq!(Some(s1), s2);
     }
 }
 

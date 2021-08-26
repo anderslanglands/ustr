@@ -76,6 +76,46 @@ impl StringCache {
         }
     }
 
+    pub(crate) fn get_existing(&self, string: &str, hash: u64) -> Option<*const u8> {
+        let mut pos = self.mask & hash as usize;
+        let mut dist = 0;
+        loop {
+            let entry = unsafe { self.entries.get_unchecked(pos) };
+            if entry.is_null() {
+                return None;
+            }
+            // This is safe as long as entry points to a valid address and the
+            // layout described in the StringCache doc comment holds.
+            unsafe {
+                // entry is a *StringCacheEntry so offseting by 1 gives us a
+                // pointer to the end of the entry, aka the beginning of the
+                // chars.
+                // As long as the memory is valid and the layout is correct,
+                // we're safe to create a string slice from the chars since
+                // they were copied directly from a valid &str.
+                let entry_chars = entry.offset(1isize) as *const u8;
+                // if entry is non-null then it must point to a valid
+                // StringCacheEntry
+                let sce = &**entry;
+                if sce.hash == hash
+                    && sce.len == string.len()
+                    && std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                        entry_chars,
+                        sce.len,
+                    )) == string
+                {
+                    // found matching string in the cache already, return it
+                    return Some(entry_chars);
+                }
+            }
+
+            // keep looking
+            dist += 1;
+            debug_assert!(dist <= self.mask);
+            pos = (pos + dist) & self.mask;
+        }
+    }
+
     // Insert the given string with its given hash into the cache
     pub(crate) fn insert(&mut self, string: &str, hash: u64) -> *const u8 {
         let mut pos = self.mask & hash as usize;
@@ -175,6 +215,7 @@ impl StringCache {
             let char_ptr = entry_ptr.offset(1isize) as *mut u8;
             std::ptr::copy_nonoverlapping(string.as_bytes().as_ptr(), char_ptr, string.len());
             // write the trailing null
+            #[allow(clippy::ptr_offset_with_cast)]
             let write_ptr = char_ptr.offset(string.len() as isize);
             std::ptr::write(write_ptr, 0u8);
 
@@ -334,6 +375,7 @@ impl StringCacheEntry {
     // Calcualte the address of the next entry in the cache. This is a utility
     // function to hide the pointer arithmetic in iterators
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
+        #[allow(clippy::ptr_offset_with_cast)]
         self.char_ptr()
             .offset(round_up_to(self.len + 1, std::mem::align_of::<StringCacheEntry>()) as isize)
     }
