@@ -196,7 +196,9 @@ impl Ustr {
         let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
             // SAFETY: sc.insert does not give back a null pointer
-            char_ptr: unsafe { NonNull::new_unchecked(sc.insert(string, hash) as *mut _) },
+            char_ptr: unsafe {
+                NonNull::new_unchecked(sc.insert(string, hash) as *mut _)
+            },
         }
     }
 
@@ -232,7 +234,8 @@ impl Ustr {
         // All these are guaranteed by StringCache::insert() and by the fact
         // we can only construct a Ustr from a valid &str.
         unsafe {
-            let len_ptr = (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
+            let len_ptr =
+                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                 self.char_ptr.as_ptr(),
                 std::ptr::read(len_ptr),
@@ -275,20 +278,21 @@ impl Ustr {
     /// as given in the CSstr docs apply
     pub fn as_cstr(&self) -> &std::ffi::CStr {
         unsafe {
-            std::ffi::CStr::from_bytes_with_nul_unchecked(std::slice::from_raw_parts(
-                self.as_ptr(),
-                self.len() + 1,
-            ))
+            std::ffi::CStr::from_bytes_with_nul_unchecked(
+                std::slice::from_raw_parts(self.as_ptr(), self.len() + 1),
+            )
         }
     }
 
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
         unsafe {
             // first offset 1 usize to find the length
-            let len_ptr = (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
+            let len_ptr =
+                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             // then offset 1 u64 to skip over the hash and arrive at the
             // beginning of the StringCacheEntry struct
-            let sce_ptr = (len_ptr as *const u64).offset(-1isize) as *const StringCacheEntry;
+            let sce_ptr = (len_ptr as *const u64).offset(-1isize)
+                as *const StringCacheEntry;
             // The allocator guarantees that the alignment is correct and that
             // this pointer is non-null
             sce_ptr.as_ref().unwrap()
@@ -725,7 +729,8 @@ mod tests {
         unsafe { super::_clear_cache() };
 
         let path = std::path::Path::new(
-            &std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"),
+            &std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR not set"),
         )
         .join("data")
         .join("blns.txt");

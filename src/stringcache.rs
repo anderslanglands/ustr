@@ -50,7 +50,8 @@ pub(crate) const INITIAL_ALLOC: usize = 4 << 20;
 pub(crate) const BIN_SHIFT: usize = 6;
 pub(crate) const NUM_BINS: usize = 1 << BIN_SHIFT;
 // Shift for top bits to determine bin a hash falls into
-pub(crate) const TOP_SHIFT: usize = 8 * std::mem::size_of::<usize>() - BIN_SHIFT;
+pub(crate) const TOP_SHIFT: usize =
+    8 * std::mem::size_of::<usize>() - BIN_SHIFT;
 
 impl StringCache {
     /// Create a new StringCache with the given starting capacity
@@ -76,7 +77,11 @@ impl StringCache {
         }
     }
 
-    pub(crate) fn get_existing(&self, string: &str, hash: u64) -> Option<*const u8> {
+    pub(crate) fn get_existing(
+        &self,
+        string: &str,
+        hash: u64,
+    ) -> Option<*const u8> {
         let mut pos = self.mask & hash as usize;
         let mut dist = 0;
         loop {
@@ -99,10 +104,9 @@ impl StringCache {
                 let sce = &**entry;
                 if sce.hash == hash
                     && sce.len == string.len()
-                    && std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                        entry_chars,
-                        sce.len,
-                    )) == string
+                    && std::str::from_utf8_unchecked(
+                        std::slice::from_raw_parts(entry_chars, sce.len),
+                    ) == string
                 {
                     // found matching string in the cache already, return it
                     return Some(entry_chars);
@@ -142,10 +146,9 @@ impl StringCache {
                 let sce = &**entry;
                 if sce.hash == hash
                     && sce.len == string.len()
-                    && std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                        entry_chars,
-                        sce.len,
-                    )) == string
+                    && std::str::from_utf8_unchecked(
+                        std::slice::from_raw_parts(entry_chars, sce.len),
+                    ) == string
                 {
                     // found matching string in the cache already, return it
                     return entry_chars;
@@ -187,7 +190,10 @@ impl StringCache {
                 .max(alloc_size);
             let old_alloc = std::mem::replace(
                 &mut self.alloc,
-                LeakyBumpAlloc::new(new_capacity, std::mem::align_of::<StringCacheEntry>()),
+                LeakyBumpAlloc::new(
+                    new_capacity,
+                    std::mem::align_of::<StringCacheEntry>(),
+                ),
             );
             self.old_allocs.push(old_alloc);
             self.total_allocated += new_capacity;
@@ -199,7 +205,8 @@ impl StringCache {
         // 3) The StringCacheEntry layout descibed above holds and the memory
         //    returned by allocate() is prooperly aligned.
         unsafe {
-            *entry_ptr = self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
+            *entry_ptr =
+                self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
 
             // write the header
             // entry_ptr is guaranteed to point to a valid StringCacheEntry, or
@@ -213,7 +220,11 @@ impl StringCache {
             );
             // write the characters after the StringCacheEntry
             let char_ptr = entry_ptr.offset(1isize) as *mut u8;
-            std::ptr::copy_nonoverlapping(string.as_bytes().as_ptr(), char_ptr, string.len());
+            std::ptr::copy_nonoverlapping(
+                string.as_bytes().as_ptr(),
+                char_ptr,
+                string.len(),
+            );
             // write the trailing null
             #[allow(clippy::ptr_offset_with_cast)]
             let write_ptr = char_ptr.offset(string.len() as isize);
@@ -236,7 +247,8 @@ impl StringCache {
     // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
-        let mut new_entries = vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
+        let mut new_entries =
+            vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
         // copy the existing map into the new map
         let mut to_copy = self.num_entries;
         for e in self.entries.iter_mut() {
@@ -291,11 +303,13 @@ impl StringCache {
     }
 
     pub(crate) fn total_allocated(&self) -> usize {
-        self.alloc.allocated() + self.old_allocs.iter().map(|a| a.allocated()).sum::<usize>()
+        self.alloc.allocated()
+            + self.old_allocs.iter().map(|a| a.allocated()).sum::<usize>()
     }
 
     pub(crate) fn total_capacity(&self) -> usize {
-        self.alloc.capacity() + self.old_allocs.iter().map(|a| a.capacity()).sum::<usize>()
+        self.alloc.capacity()
+            + self.old_allocs.iter().map(|a| a.capacity()).sum::<usize>()
     }
 
     pub(crate) fn num_entries(&self) -> usize {
@@ -350,8 +364,10 @@ impl Iterator for StringCacheIterator {
             self.current_ptr = sce.next_entry();
 
             // we know we're safe not to check here since we put valid UTF-8 in
-            let s =
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(sce.char_ptr(), sce.len));
+            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                sce.char_ptr(),
+                sce.len,
+            ));
             Some(s)
         }
     }
@@ -376,7 +392,9 @@ impl StringCacheEntry {
     // function to hide the pointer arithmetic in iterators
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
         #[allow(clippy::ptr_offset_with_cast)]
-        self.char_ptr()
-            .offset(round_up_to(self.len + 1, std::mem::align_of::<StringCacheEntry>()) as isize)
+        self.char_ptr().offset(round_up_to(
+            self.len + 1,
+            std::mem::align_of::<StringCacheEntry>(),
+        ) as isize)
     }
 }

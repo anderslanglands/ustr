@@ -16,9 +16,10 @@ use parking_lot::Mutex;
 use spin::Mutex;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("data")
-        .join("raft-large-directories.txt");
+    let path =
+        std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("data")
+            .join("raft-large-directories.txt");
     let raft = std::fs::read_to_string(path).unwrap();
     let raft = Arc::new(
         raft.split_whitespace()
@@ -80,47 +81,52 @@ fn criterion_benchmark(c: &mut Criterion) {
         let num_threads = *num_threads;
 
         let s = Arc::clone(&raft);
-        c.bench_function(&format!("raft ustr x {} threads", num_threads), move |b| {
-            let (tx1, rx1) = bounded(0);
-            let (tx2, rx2) = bounded(0);
-            let s = Arc::clone(&s);
-            scope(|scope| {
-                for tt in 0..num_threads {
-                    let t = tt;
-                    let rx1 = rx1.clone();
-                    let tx2 = tx2.clone();
-                    let s = Arc::clone(&s);
-                    scope.spawn(move |_| {
-                        while rx1.recv().is_ok() {
-                            for s in s.iter().cycle().skip(t * 17).take(num) {
-                                black_box(ustr(s));
+        c.bench_function(
+            &format!("raft ustr x {} threads", num_threads),
+            move |b| {
+                let (tx1, rx1) = bounded(0);
+                let (tx2, rx2) = bounded(0);
+                let s = Arc::clone(&s);
+                scope(|scope| {
+                    for tt in 0..num_threads {
+                        let t = tt;
+                        let rx1 = rx1.clone();
+                        let tx2 = tx2.clone();
+                        let s = Arc::clone(&s);
+                        scope.spawn(move |_| {
+                            while rx1.recv().is_ok() {
+                                for s in s.iter().cycle().skip(t * 17).take(num)
+                                {
+                                    black_box(ustr(s));
+                                }
+                                tx2.send(()).unwrap();
                             }
-                            tx2.send(()).unwrap();
+                        });
+                    }
+
+                    b.iter(|| {
+                        unsafe { ustr::_clear_cache() };
+                        for _ in 0..num_threads {
+                            tx1.send(()).unwrap();
+                        }
+
+                        for _ in 0..num_threads {
+                            rx2.recv().unwrap();
                         }
                     });
-                }
-
-                b.iter(|| {
-                    unsafe { ustr::_clear_cache() };
-                    for _ in 0..num_threads {
-                        tx1.send(()).unwrap();
-                    }
-
-                    for _ in 0..num_threads {
-                        rx2.recv().unwrap();
-                    }
-                });
-                drop(tx1);
-            })
-            .unwrap();
-        });
+                    drop(tx1);
+                })
+                .unwrap();
+            },
+        );
 
         let s = Arc::clone(&raft);
         c.bench_function(
             &format!("raft string-interner x {} threads", num_threads),
             move |b| {
-                let (tx1, rx1) =
-                    bounded::<Arc<Mutex<StringInterner<string_interner::DefaultSymbol>>>>(0);
+                let (tx1, rx1) = bounded::<
+                    Arc<Mutex<StringInterner<string_interner::DefaultSymbol>>>,
+                >(0);
                 let (tx2, rx2) = bounded(0);
                 scope(|scope| {
                     for tt in 0..num_threads {
@@ -130,7 +136,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                         let s = Arc::clone(&s);
                         scope.spawn(move |_| {
                             while let Ok(interner) = rx1.recv() {
-                                for s in s.iter().cycle().skip(t * 17).take(num) {
+                                for s in s.iter().cycle().skip(t * 17).take(num)
+                                {
                                     let mut int = interner.lock();
                                     black_box(int.get_or_intern(s));
                                 }
@@ -140,7 +147,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     b.iter(|| {
-                        let interner = Arc::new(Mutex::new(StringInterner::default()));
+                        let interner =
+                            Arc::new(Mutex::new(StringInterner::default()));
                         for _ in 0..num_threads {
                             tx1.send(interner.clone()).unwrap();
                         }
@@ -170,7 +178,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                         scope.spawn(move |_| {
                             while rx1.recv().is_ok() {
                                 let mut v = Vec::with_capacity(num);
-                                for s in s.iter().cycle().skip(t * 17).take(num) {
+                                for s in s.iter().cycle().skip(t * 17).take(num)
+                                {
                                     v.push(DefaultAtom::from(s.as_str()));
                                 }
                                 tx2.send(()).unwrap();
@@ -207,7 +216,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                         let s = Arc::clone(&s);
                         scope.spawn(move |_| {
                             while rx1.recv().is_ok() {
-                                for s in s.iter().cycle().skip(t * 17).take(num) {
+                                for s in s.iter().cycle().skip(t * 17).take(num)
+                                {
                                     black_box(String::from(s));
                                 }
                                 tx2.send(()).unwrap();
@@ -231,9 +241,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     }
 
-    let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("data")
-        .join("raft-large-directories.txt");
+    let path =
+        std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("data")
+            .join("raft-large-directories.txt");
     let raft_large = std::fs::read_to_string(path).unwrap();
     let raft_large = Arc::new(
         raft_large
