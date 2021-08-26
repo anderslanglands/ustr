@@ -86,6 +86,13 @@ You also need to enable `--features=serialization` when running the tests to avo
 If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
 # Changelog
+## Changes since 0.8
+### Add `existing_ustr` function (contributed by macprog-guy)
+The idea behind this is to allow the creation of a ustr only when that ustr already exists. This is particularly useful when Ustr are being created using untrusted user input (say from a web server or api). In that case, by providing different values at each call we consume more and more memory eventually running out (DoS).
+
+
+### Add rustfmt.toml to repo
+
 ## Changes since 0.7
 ### Update dependencies
 The versions of `parking_lot` and `ahash` have been updated
