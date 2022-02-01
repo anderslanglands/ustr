@@ -49,16 +49,19 @@
 //! By enabling the `"serialize"` feature you can serialize individual `Ustr`s or the whole cache with serde.
 //!
 //! ```rust
+//! # #[cfg(feature = "serialization")] {
 //! use ustr::{Ustr, ustr};
 //! let u_ser = ustr("serialization is fun!");
 //! let json = serde_json::to_string(&u_ser).unwrap();
 //! let u_de : Ustr = serde_json::from_str(&json).unwrap();
 //! assert_eq!(u_ser, u_de);
+//! # }
 //! ```
 //!
 //! Since the cache is global, use the `ustr::DeserializedCache` dummy object to drive the deserialization.
 //!
 //! ```rust
+//! # #[cfg(feature = "serialization")] {
 //! use ustr::{Ustr, ustr};
 //! ustr("Send me to JSON and back");
 //! let json = serde_json::to_string(ustr::get_cache()).unwrap();
@@ -67,7 +70,7 @@
 //! let _: ustr::DeserializedCache = serde_json::from_str(&json).unwrap();
 //! assert_eq!(ustr::num_entries(), 1);
 //! assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON and back"]);
-//!
+//! # }
 //! ```
 //!
 //!
@@ -571,8 +574,16 @@ pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
 
 #[cfg(test)]
 mod tests {
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+
+    lazy_static! {
+        static ref TEST_LOCK: Mutex<()> = Mutex::new(());
+    }
+
     #[test]
     fn it_works() {
+        let _t = TEST_LOCK.lock();
         use super::ustr as u;
 
         let u_hello = u("hello");
@@ -583,6 +594,7 @@ mod tests {
 
     #[test]
     fn empty_string() {
+        let _t = TEST_LOCK.lock();
         use super::ustr as u;
 
         unsafe {
@@ -598,6 +610,7 @@ mod tests {
 
     #[test]
     fn c_str_works() {
+        let _t = TEST_LOCK.lock();
         use super::ustr as u;
         use std::ffi::CStr;
 
@@ -620,6 +633,7 @@ mod tests {
     // We have to disable miri here as it's far too slow unfortunately
     #[cfg_attr(miri, ignore)]
     fn blns() {
+        let _t = TEST_LOCK.lock();
         use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
 
@@ -675,6 +689,7 @@ mod tests {
     // We have to disable miri here as it's far too slow unfortunately
     #[cfg_attr(miri, ignore)]
     fn raft() {
+        let _t = TEST_LOCK.lock();
         use super::ustr as u;
         use std::sync::Arc;
 
@@ -711,6 +726,7 @@ mod tests {
     // can't open files so it's not usable right now
     // #[test]
     // fn words() {
+    //     let _t = TEST_LOCK.lock();
     //     use super::ustr as u;
     //     use std::sync::Arc;
 
@@ -732,6 +748,7 @@ mod tests {
     #[cfg(all(feature = "serialization", not(miri)))]
     #[test]
     fn serialization() {
+        let _t = TEST_LOCK.lock();
         use super::{string_cache_iter, ustr as u};
         use std::collections::HashSet;
 
@@ -796,6 +813,7 @@ mod tests {
 
     #[test]
     fn partial_ord() {
+        let _t = TEST_LOCK.lock();
         use super::ustr;
         let str_a = ustr("aaa");
         let str_z = ustr("zzz");
@@ -806,6 +824,7 @@ mod tests {
 
     #[test]
     fn ord() {
+        let _t = TEST_LOCK.lock();
         use super::ustr;
         let u_apple = ustr("apple");
         let u_bravo = ustr("bravo");
@@ -823,6 +842,7 @@ mod tests {
 
     #[test]
     fn test_into_str() {
+        let _t = TEST_LOCK.lock();
         use super::ustr;
 
         assert_eq!("converted", takes_into_str(ustr("converted")));
@@ -830,6 +850,7 @@ mod tests {
 
     #[test]
     fn test_existing_ustr() {
+        let _t = TEST_LOCK.lock();
         use super::{existing_ustr, ustr};
         assert_eq!(existing_ustr("hello world!"), None);
         let s1 = ustr("hello world!");
