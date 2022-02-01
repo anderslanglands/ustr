@@ -155,11 +155,19 @@ use std::ptr::NonNull;
 /// To use, create one using `Ustr::from` or the `ustr` function. You can freely
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
-#[derive(Copy, Clone, PartialEq, Ord)]
-#[allow(clippy::derive_ord_xor_partial_ord)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct Ustr {
     char_ptr: NonNull<u8>,
+}
+
+/// Defer to &str for equality - lexicographic ordering will be slower than
+/// pointer comparison, but much less surprising if you use Ustrs as keys in
+/// e.g. a BTreeMap
+impl Ord for Ustr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
 }
 
 /// Defer to &str for equality - lexicographic ordering will be slower than
