@@ -18,8 +18,10 @@ impl LeakyBumpAlloc {
     pub fn new(capacity: usize, alignment: usize) -> LeakyBumpAlloc {
         let layout = Layout::from_size_align(capacity, alignment).unwrap();
         let start = unsafe { System.alloc(layout) };
-        #[allow(clippy::ptr_offset_with_cast)]
-        let end = unsafe { start.offset(layout.size() as isize) };
+        if start.is_null() {
+            panic!("oom");
+        }
+        let end = unsafe { start.add(layout.size()) };
         let ptr = end;
         LeakyBumpAlloc {
             layout,
