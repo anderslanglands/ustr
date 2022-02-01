@@ -98,7 +98,7 @@ impl StringCache {
                 // As long as the memory is valid and the layout is correct,
                 // we're safe to create a string slice from the chars since
                 // they were copied directly from a valid &str.
-                let entry_chars = entry.offset(1isize) as *const u8;
+                let entry_chars = entry.add(1) as *const u8;
                 // if entry is non-null then it must point to a valid
                 // StringCacheEntry
                 let sce = &**entry;
@@ -140,7 +140,7 @@ impl StringCache {
                 // As long as the memory is valid and the layout is correct,
                 // we're safe to create a string slice from the chars since
                 // they were copied directly from a valid &str.
-                let entry_chars = entry.offset(1isize) as *const u8;
+                let entry_chars = entry.add(1) as *const u8;
                 // if entry is non-null then it must point to a valid
                 // StringCacheEntry
                 let sce = &**entry;
@@ -219,15 +219,14 @@ impl StringCache {
                 },
             );
             // write the characters after the StringCacheEntry
-            let char_ptr = entry_ptr.offset(1isize) as *mut u8;
+            let char_ptr = entry_ptr.add(1) as *mut u8;
             std::ptr::copy_nonoverlapping(
                 string.as_bytes().as_ptr(),
                 char_ptr,
                 string.len(),
             );
             // write the trailing null
-            #[allow(clippy::ptr_offset_with_cast)]
-            let write_ptr = char_ptr.offset(string.len() as isize);
+            let write_ptr = char_ptr.add(string.len());
             std::ptr::write(write_ptr, 0u8);
 
             self.num_entries += 1;
@@ -385,16 +384,16 @@ impl StringCacheEntry {
     pub(crate) fn char_ptr(&self) -> *const u8 {
         // we know the chars are always directly after this struct in memory
         // because that's the way they're laid out on initialization
-        unsafe { (self as *const StringCacheEntry).offset(1) as *const u8 }
+        unsafe { (self as *const StringCacheEntry).add(1) as *const u8 }
     }
 
     // Calcualte the address of the next entry in the cache. This is a utility
     // function to hide the pointer arithmetic in iterators
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
         #[allow(clippy::ptr_offset_with_cast)]
-        self.char_ptr().offset(round_up_to(
+        self.char_ptr().add(round_up_to(
             self.len + 1,
             std::mem::align_of::<StringCacheEntry>(),
-        ) as isize)
+        ))
     }
 }
