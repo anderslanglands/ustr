@@ -457,6 +457,7 @@ pub fn total_capacity() -> usize {
 /// assert_eq!(u1, u2);
 /// assert_eq!(ustr::num_entries(), 1);
 /// ```
+#[inline]
 pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
@@ -473,6 +474,7 @@ pub fn ustr(s: &str) -> Ustr {
 /// assert_eq!(u1, None);
 /// assert_eq!(u3, Some(u2));
 /// ```
+#[inline]
 pub fn existing_ustr(s: &str) -> Option<Ustr> {
     Ustr::from_existing(s)
 }
