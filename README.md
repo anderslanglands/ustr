@@ -77,11 +77,6 @@ assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON 
 
 ```
 
-# Testing
-Note that tests must be run with RUST_TEST_THREADS=1 or some tests will fail due to concurrent tests filling the cache or segfaults caused by concurrently clearing the cache. Note that this cannot happen in user code if you don't call the hidden functions documented DO NOT CALL. If you do, well you were warned.
-
-You also need to enable `--features=serialization` when running the tests to avoid some doctests demonstrating serde support failing.
-
 # Calling from C/C++
 If you are writing a library that uses ustr and want users to be able to create `Ustr`s to pass to your API from C, add `ustr_extern.rs` to your crate and use `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
