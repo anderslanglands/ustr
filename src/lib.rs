@@ -131,6 +131,7 @@
 //! system as well, bit 32-bit is not checked regularly. If you want to use it
 //! on 32-bit, please make sure to run Miri and open and issue if you find any
 //! problems.
+
 #[cfg(not(feature = "spinlock"))]
 use parking_lot::Mutex;
 #[cfg(feature = "spinlock")]
@@ -159,6 +160,20 @@ use std::ptr::NonNull;
 /// To use, create one using `Ustr::from` or the `ustr` function. You can freely
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
+#[cfg_attr(
+    feature = "spinlock",
+    deprecated(
+        since = "0.9.0",
+        note = "spinlock was experimental and has now been deprecated for removal in 1.0, where parking_lot's Mutex will be the only synchronization primitive. Please do not use the 'spinlock' feature"
+    )
+)]
+#[cfg_attr(
+    feature = "fasthash",
+    deprecated(
+        since = "0.9.0",
+        note = "fasthash support is deprecated and will be removed in 1.0 as ahash in better in all situations."
+    )
+)]
 #[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct Ustr {
