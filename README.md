@@ -85,6 +85,18 @@ If you are writing a library that uses ustr and want users to be able to create 
 ### Add `existing_ustr` function (contributed by macprog-guy)
 The idea behind this is to allow the creation of a ustr only when that ustr already exists. This is particularly useful when Ustr are being created using untrusted user input (say from a web server or api). In that case, by providing different values at each call we consume more and more memory eventually running out (DoS).
 
+### Add implementation for `Ord` (contributed by zigazeljko)
+
+### Inlined a bunch of simple functions (contributed by g-plane)
+
+### Fixed tests to lock rather than relying on `RUST_TEST_THREADS=1` (contributed by kornelski)
+
+### Fixed tests to handle serialization feature  properly when enabled (contributed by kornelski)
+
+### Added a check for a potential allocation failure in the allocator (contributed by kornelski)
+
+### Added `FromStr` impl (contributed by martinmr)
+
 
 ### Add rustfmt.toml to repo
 
