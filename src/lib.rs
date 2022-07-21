@@ -137,6 +137,7 @@ use parking_lot::Mutex;
 use spin::Mutex;
 
 use std::fmt;
+use std::str::FromStr;
 
 mod stringcache;
 pub use stringcache::*;
@@ -354,6 +355,15 @@ impl Eq for Ustr {}
 impl AsRef<str> for Ustr {
     fn as_ref(&self) -> &str {
         self.as_str()
+    }
+}
+
+impl FromStr for Ustr {
+    type Err = std::string::ParseError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Ustr::from(s))
     }
 }
 
