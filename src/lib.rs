@@ -421,7 +421,7 @@ impl fmt::Display for Ustr {
 
 impl fmt::Debug for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "u!(\"{}\")", self.as_str())
+        write!(f, "u!({:?})", self.as_str())
     }
 }
 
