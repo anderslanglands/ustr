@@ -138,6 +138,7 @@ use parking_lot::Mutex;
 use spin::Mutex;
 
 use std::fmt;
+use std::mem::size_of;
 use std::str::FromStr;
 
 mod stringcache;
@@ -261,11 +262,9 @@ impl Ustr {
         // All these are guaranteed by StringCache::insert() and by the fact
         // we can only construct a Ustr from a valid &str.
         unsafe {
-            let len_ptr =
-                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                 self.char_ptr.as_ptr(),
-                std::ptr::read(len_ptr),
+                self.len(),
             ))
         }
     }
@@ -311,22 +310,19 @@ impl Ustr {
         }
     }
 
+    // Get a raw pointer to the StringCacheEntry
+    #[inline]
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
+        // The allocator guarantees that the alignment is correct and that
+        // this pointer is non-null
         unsafe {
-            // first offset 1 usize to find the length
-            let len_ptr =
-                (self.char_ptr.as_ptr() as *const usize).offset(-1isize);
-            // then offset 1 u64 to skip over the hash and arrive at the
-            // beginning of the StringCacheEntry struct
-            let sce_ptr = (len_ptr as *const u64).offset(-1isize)
-                as *const StringCacheEntry;
-            // The allocator guarantees that the alignment is correct and that
-            // this pointer is non-null
-            sce_ptr.as_ref().unwrap()
+            &*((self.char_ptr.as_ptr() as usize - size_of::<StringCacheEntry>())
+                as *const StringCacheEntry)
         }
     }
 
     /// Get the length (in bytes) of this string.
+    #[inline]
     pub fn len(&self) -> usize {
         self.as_string_cache_entry().len
     }
@@ -337,6 +333,7 @@ impl Ustr {
     }
 
     /// Get the precomputed hash for this string
+    #[inline]
     pub fn precomputed_hash(&self) -> u64 {
         self.as_string_cache_entry().hash
     }
