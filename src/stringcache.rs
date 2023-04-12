@@ -36,8 +36,9 @@ pub(crate) struct StringCache {
     num_entries: usize,
     mask: usize,
     total_allocated: usize,
-    // padding and aligning to 128 bytes gives up to 20% performance improvement
-    // this actually aligns to 256 bytes because of the Mutex around it
+    // padding and aligning to 128 bytes gives up to 20% performance
+    // improvement this actually aligns to 256 bytes because of the Mutex
+    // around it
     _pad: [u32; 3],
 }
 
@@ -200,9 +201,10 @@ impl StringCache {
         }
 
         // This is safe as long as:
-        // 1) alloc_size is calculated correctly
-        // 2) there is enough space in the allocator (checked in the block above)
-        // 3) The StringCacheEntry layout descibed above holds and the memory
+        // 1. alloc_size is calculated correctly
+        // 2. there is enough space in the allocator (checked in the block
+        //    above)
+        // 3. The StringCacheEntry layout descibed above holds and the memory
         //    returned by allocate() is prooperly aligned.
         unsafe {
             *entry_ptr =
