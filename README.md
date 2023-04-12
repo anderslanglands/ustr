@@ -2,9 +2,7 @@
 
 Fast, FFI-friendly string interning.
 
-| | | |
-|-|-|-|
-| [![Build Status]][travis] | [![Latest Version]][crates.io] | [![Docs Badge]][docs.rs] |
+[![Build Status]][travis][![Latest Version]][crates.io][![Docs Badge]][docs.rs] |
 
 [Build Status]: https://img.shields.io/travis/anderslanglands/ustr/master?style=for-the-badge
 [travis]: https://travis-ci.com/anderslanglands/ustr
@@ -111,7 +109,7 @@ If you are writing a library that uses ustr and want users to be able to create
 
 * All dependencies were bumped to latest versions
 
-* All features were removed (there are good better defaults) except for
+* All features were removed (there are good defaults) except for
   `serialization`
 
 * The `serialization` feature was [renamed](https://github.com/rust-lang/api-guidelines/discussions/180)
