@@ -1,17 +1,23 @@
-//! Fast, FFI-friendly string interning. A `Ustr` (**U**nique **Str**) is a lightweight handle representing a static, immutable entry in a global string cache, allowing for:
-//! * Extremely fast string assignment and comparisons - it's just a pointer comparison.
-//! * Efficient storage -  only one copy of the string is held in memory, and getting access to it is just a pointer indirection.
-//! * Fast hashing - the precomputed hash is stored with the string
-//! * Fast FFI - the string is stored with a terminating null byte so can be passed to C directly without doing the CString dance.
+//! Fast, FFI-friendly string interning. A [`Ustr`] (**U**nique **Str**) is a
+//! lightweight handle representing a static, immutable entry in a global string
+//! cache, allowing for:
+//! * Extremely fast string assignment and comparisons -- it's just a pointer
+//!   comparison.
+//! * Efficient storage -- only one copy of the string is held in memory, and
+//!   getting access to it is just a pointer indirection.
+//! * Fast hashing -- the precomputed hash is stored with the string
+//! * Fast FFI -- the string is stored with a terminating null byte so can be
+//!   passed to C directly without doing the CString dance.
 //!
-//! The downside is no strings are ever freed, so if you're creating lots and lots of strings, you might run out of memory. On the other hand, War and Peace
-//! is only 3MB, so it's probably fine.
+//! The downside is no strings are ever freed, so if you're creating lots and
+//! lots of strings, you might run out of memory. On the other hand, War and
+//! Peace is only 3MB, so it's probably fine.
 //!
 //! This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oiio/blob/master/src/include/OpenImageIO/ustring.h) but it is NOT binary-compatible (yet). The underlying hash map implementation is directy ported from OIIO.
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! use ustr::{Ustr, ustr, ustr as u};
 //!
 //! # unsafe { ustr::_clear_cache() };
@@ -45,10 +51,10 @@
 //! assert_eq!(*map.get(&u1).unwrap(), 17);
 //! ```
 //!
+//! By enabling the `"serialize"` feature you can serialize individual `Ustr`s
+//! or the whole cache with serde.
 //!
-//! By enabling the `"serialize"` feature you can serialize individual `Ustr`s or the whole cache with serde.
-//!
-//! ```rust
+//! ```
 //! # #[cfg(feature = "serialization")] {
 //! use ustr::{Ustr, ustr};
 //! let u_ser = ustr("serialization is fun!");
@@ -58,13 +64,14 @@
 //! # }
 //! ```
 //!
-//! Since the cache is global, use the `ustr::DeserializedCache` dummy object to drive the deserialization.
+//! Since the cache is global, use the `ustr::DeserializedCache` dummy object to
+//! drive the deserialization.
 //!
-//! ```rust
+//! ```
 //! # #[cfg(feature = "serialization")] {
 //! use ustr::{Ustr, ustr};
 //! ustr("Send me to JSON and back");
-//! let json = serde_json::to_string(ustr::get_cache()).unwrap();
+//! let json = serde_json::to_string(ustr::cache()).unwrap();
 //!
 //! // ... some time later ...
 //! let _: ustr::DeserializedCache = serde_json::from_str(&json).unwrap();
@@ -73,70 +80,65 @@
 //! # }
 //! ```
 //!
-//!
 //! ## Why?
+//!
 //! It is common in certain types of applications to use strings as identifiers,
 //! but not really do any processing with them.
-//! To paraphrase from OIIO's Ustring documentation -
-//! Compared to standard strings, Ustrs have several advantages:
+//! To paraphrase from OIIO's `Ustring` documentation -- compared to standard
+//! strings, `Ustr`s have several advantages:
 //!
-//!   - Each individual Ustr is very small -- in fact, we guarantee that
-//!     a Ustr is the same size and memory layout as an ordinary *u8.
-//!   - Storage is frugal, since there is only one allocated copy of each
-//!     unique character sequence, throughout the lifetime of the program.
-//!   - Assignment from one Ustr to another is just copy of the pointer;
-//!     no allocation, no character copying, no reference counting.
-//!   - Equality testing (do the strings contain the same characters) is
-//!     a single operation, the comparison of the pointer.
-//!   - Memory allocation only occurs when a new Ustr is constructed from
-//!     raw characters the FIRST time -- subsequent constructions of the
-//!     same string just finds it in the canonial string set, but doesn't
-//!     need to allocate new storage.  Destruction of a Ustr is trivial,
-//!     there is no de-allocation because the canonical version stays in
-//!     the set.  Also, therefore, no user code mistake can lead to
-//!     memory leaks.
+//!   - Each individual `Ustr` is very small -- in fact, we guarantee that a
+//!     `Ustr` is the same size and memory layout as an ordinary `*u8`.
+//!   - Storage is frugal, since there is only one allocated copy of each unique
+//!     character sequence, throughout the lifetime of the program.
+//!   - Assignment from one `Ustr` to another is just copy of the pointer; no
+//!     allocation, no character copying, no reference counting.
+//!   - Equality testing (do the strings contain the same characters) is a
+//!     single operation, the comparison of the pointer.
+//!   - Memory allocation only occurs when a new `Ustr` is constructed from raw
+//!     characters the FIRST time -- subsequent constructions of the same string
+//!     just finds it in the canonial string set, but doesn't need to allocate
+//!     new storage.  Destruction of a `Ustr` is trivial, there is no
+//!     de-allocation because the canonical version stays in the set.  Also,
+//!     therefore, no user code mistake can lead to memory leaks.
 //!
 //! But there are some problems, too.  Canonical strings are never freed
 //! from the table.  So in some sense all the strings "leak", but they
 //! only leak one copy for each unique string that the program ever comes
 //! across.
 //!
-//! On the whole, Ustrs are a really great string representation
-//!   - if you tend to have (relatively) few unique strings, but many
-//!     copies of those strings;
-//!   - if the creation of strings from raw characters is relatively
-//!     rare compared to copying or comparing to existing strings;
-//!   - if you tend to make the same strings over and over again, and
-//!     if it's relatively rare that a single unique character sequence
-//!     is used only once in the entire lifetime of the program;
+//! On the whole, `Ustr`s are a really great string representation
+//!   - if you tend to have (relatively) few unique strings, but many copies of
+//!     those strings;
+//!   - if the creation of strings from raw characters is relatively rare
+//!     compared to copying or comparing to existing strings;
+//!   - if you tend to make the same strings over and over again, and if it's
+//!     relatively rare that a single unique character sequence is used only
+//!     once in the entire lifetime of the program;
 //!   - if your most common string operations are assignment and equality
 //!     testing and you want them to be as fast as possible;
-//!   - if you are doing relatively little character-by-character assembly
-//!     of strings, string concatenation, or other "string manipulation"
-//!     (other than equality testing).
+//!   - if you are doing relatively little character-by-character assembly of
+//!     strings, string concatenation, or other "string manipulation" (other
+//!     than equality testing).
 //!
-//! Ustrs are not so hot
-//!   - if your program tends to have very few copies of each character
-//!     sequence over the entire lifetime of the program;
-//!   - if your program tends to generate a huge variety of unique
-//!     strings over its lifetime, each of which is used only a short
-//!     time and then discarded, never to be needed again;
-//!   - if you don't need to do a lot of string assignment or equality
-//!     testing, but lots of more complex string manipulation.
+//! `Ustr`s are not so hot
+//!   - if your program tends to have very few copies of each character sequence
+//!     over the entire lifetime of the program;
+//!   - if your program tends to generate a huge variety of unique strings over
+//!     its lifetime, each of which is used only a short time and then
+//!     discarded, never to be needed again;
+//!   - if you don't need to do a lot of string assignment or equality testing,
+//!     but lots of more complex string manipulation.
 //!
 //! ## Safety and Compatibility
-//! This crate contains a significant amount of unsafe but usage has been checked
-//! and is well-documented. It is also run through Miri as part of the CI process.
-//! I use it regularly on 64-bit systems, and it has passed Miri on a 32-bit
-//! system as well, bit 32-bit is not checked regularly. If you want to use it
-//! on 32-bit, please make sure to run Miri and open and issue if you find any
-//! problems.
-
-#[cfg(not(feature = "spinlock"))]
+//!
+//! This crate contains a significant amount of unsafe but usage has been
+//! checked and is well-documented. It is also run through Miri as part of the
+//! CI process. I use it regularly on 64-bit systems, and it has passed Miri on
+//! a 32-bit system as well, bit 32-bit is not checked regularly. If you want to
+//! use it on 32-bit, please make sure to run Miri and open and issue if you
+//! find any problems.
 use parking_lot::Mutex;
-#[cfg(feature = "spinlock")]
-use spin::Mutex;
-
 use std::fmt;
 use std::mem::size_of;
 use std::str::FromStr;
@@ -161,20 +163,6 @@ use std::ptr::NonNull;
 /// To use, create one using `Ustr::from` or the `ustr` function. You can freely
 /// copy, destroy or send Ustrs to other threads: the underlying string is
 /// always valid in memory (and is never destroyed).
-#[cfg_attr(
-    feature = "spinlock",
-    deprecated(
-        since = "0.9.0",
-        note = "spinlock was experimental and has now been deprecated for removal in 1.0, where parking_lot's Mutex will be the only synchronization primitive. Please do not use the 'spinlock' feature"
-    )
-)]
-#[cfg_attr(
-    feature = "fasthash",
-    deprecated(
-        since = "0.9.0",
-        note = "fasthash support is deprecated and will be removed in 1.0 as ahash in better in all situations."
-    )
-)]
 #[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct Ustr {
@@ -213,11 +201,8 @@ impl Ustr {
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
     pub fn from(string: &str) -> Ustr {
-        #[cfg(feature = "hashcity")]
-        let hash = fasthash::city::hash64(string.as_bytes());
-        #[cfg(not(feature = "hashcity"))]
         let hash = {
-            let mut hasher = ahash::AHasher::new_with_keys(123, 456);
+            let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
@@ -231,11 +216,8 @@ impl Ustr {
     }
 
     pub fn from_existing(string: &str) -> Option<Ustr> {
-        #[cfg(feature = "hashcity")]
-        let hash = fasthash::city::hash64(string.as_bytes());
-        #[cfg(not(feature = "hashcity"))]
         let hash = {
-            let mut hasher = ahash::AHasher::new_with_keys(123, 456);
+            let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
@@ -424,7 +406,7 @@ impl fmt::Debug for Ustr {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Ustr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
@@ -446,7 +428,8 @@ pub unsafe fn _clear_cache() {
     }
 }
 
-/// Returns the total amount of memory allocated and in use by the cache in bytes
+/// Returns the total amount of memory allocated and in use by the cache in
+/// bytes
 pub fn total_allocated() -> usize {
     STRING_CACHE
         .0
@@ -487,7 +470,8 @@ pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
 
-/// Create a new Ustr from the given &str but only if it already exists in the string cache.
+/// Create a new Ustr from the given &str but only if it already exists in the
+/// string cache.
 ///
 /// ```
 /// use ustr::{ustr, existing_ustr};
@@ -516,8 +500,8 @@ pub fn existing_ustr(s: &str) -> Option<Ustr> {
 /// ustr("Send me to JSON and back");
 /// let json = serde_json::to_string(ustr::get_cache()).unwrap();
 /// # }
-pub fn get_cache() -> &'static Bins {
-    &*STRING_CACHE
+pub fn cache() -> &'static Bins {
+    &STRING_CACHE
 }
 
 /// Returns the number of unique strings in the cache
@@ -557,8 +541,8 @@ pub fn num_entries_per_bin() -> Vec<usize> {
 
 /// Return an iterator over the entire string cache.
 ///
-/// If another thread is adding strings concurrently to this call then they might
-/// not show up in the view of the cache presented by this iterator.
+/// If another thread is adding strings concurrently to this call then they
+/// might not show up in the view of the cache presented by this iterator.
 ///
 /// # Safety
 /// This returns an iterator to the state of the cache at the time when
@@ -662,7 +646,8 @@ mod tests {
         // clear the cache first or our results will be wrong
         unsafe { super::_clear_cache() };
 
-        // let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        // let path =
+        // std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         //     .join("data")
         //     .join("blns.txt");
         // let blns = std::fs::read_to_string(path).unwrap();
@@ -715,7 +700,8 @@ mod tests {
         use super::ustr as u;
         use std::sync::Arc;
 
-        // let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        // let path =
+        // std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         //     .join("data")
         //     .join("raft-large-directories.txt");
         // let raft = std::fs::read_to_string(path).unwrap();
@@ -799,7 +785,7 @@ mod tests {
             ss.push(s.to_owned());
         }
 
-        let json = serde_json::to_string(super::get_cache()).unwrap();
+        let json = serde_json::to_string(super::cache()).unwrap();
         unsafe {
             super::_clear_cache();
         }

@@ -3,24 +3,18 @@ use byteorder::{ByteOrder, NativeEndian};
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
-/// A standard `HashMap` using `Ustr` as the key type with a custom `Hasher` that
-/// just uses the precomputed hash for speed instead of calculating it
+/// A standard `HashMap` using `Ustr` as the key type with a custom `Hasher`
+/// that just uses the precomputed hash for speed instead of calculating it
 pub type UstrMap<V> = HashMap<Ustr, V, BuildHasherDefault<IdentityHasher>>;
-/// A standard `HashSet` using `Ustr` as the key type with a custom `Hasher` that
-/// just uses the precomputed hash for speed instead of calculating it
+/// A standard `HashSet` using `Ustr` as the key type with a custom `Hasher`
+/// that just uses the precomputed hash for speed instead of calculating it
 pub type UstrSet = HashSet<Ustr, BuildHasherDefault<IdentityHasher>>;
 
 /// The worst hasher in the world - the identity hasher.
 #[doc(hidden)]
+#[derive(Default)]
 pub struct IdentityHasher {
     hash: u64,
-}
-
-impl Default for IdentityHasher {
-    #[inline]
-    fn default() -> IdentityHasher {
-        IdentityHasher { hash: 0 }
-    }
 }
 
 impl Hasher for IdentityHasher {
