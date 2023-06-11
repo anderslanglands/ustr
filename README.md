@@ -104,6 +104,8 @@ If you are writing a library that uses ustr and want users to be able to create
 * Fixed and [issue](https://github.com/anderslanglands/ustr/issues/33) that
   would stop `Ustr` from working on `wasm32-unknown-unknown` (contributed by bouk)
 
+and thanks to virtualritz:
+
 * `Ustr::get_cache()` was [renamed](https://rust-lang.github.io/api-guidelines/naming.html#getter-names-follow-rust-convention-c-getter)
   to `cache()`
 
