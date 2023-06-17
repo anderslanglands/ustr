@@ -51,13 +51,13 @@
 //! assert_eq!(*map.get(&u1).unwrap(), 17);
 //! ```
 //!
-//! By enabling the `"serialize"` feature you can serialize individual `Ustr`s
+//! By enabling the `"serde"` feature you can serialize individual `Ustr`s
 //! or the whole cache with serde.
 //!
 //! ```
-//! # #[cfg(feature = "serialization")] {
+//! # #[cfg(feature = "serde")] {
 //! use ustr::{Ustr, ustr};
-//! let u_ser = ustr("serialization is fun!");
+//! let u_ser = ustr("serde");
 //! let json = serde_json::to_string(&u_ser).unwrap();
 //! let u_de : Ustr = serde_json::from_str(&json).unwrap();
 //! assert_eq!(u_ser, u_de);
@@ -68,7 +68,7 @@
 //! drive the deserialization.
 //!
 //! ```
-//! # #[cfg(feature = "serialization")] {
+//! # #[cfg(feature = "serde")] {
 //! use ustr::{Ustr, ustr};
 //! ustr("Send me to JSON and back");
 //! let json = serde_json::to_string(ustr::cache()).unwrap();
@@ -145,9 +145,9 @@ use std::str::FromStr;
 
 mod stringcache;
 pub use stringcache::*;
-#[cfg(feature = "serialization")]
+#[cfg(feature="serde")]
 pub mod serialization;
-#[cfg(feature = "serialization")]
+#[cfg(feature="serde")]
 pub use serialization::DeserializedCache;
 
 mod bumpalloc;
@@ -494,11 +494,11 @@ pub fn existing_ustr(s: &str) -> Option<Ustr> {
 /// # Examples
 /// ```
 /// # use ustr::{Ustr, ustr, ustr as u};
-/// # #[cfg(feature="serialization")]
+/// # #[cfg(feature="serde")]
 /// # {
 /// # unsafe { ustr::_clear_cache() };
 /// ustr("Send me to JSON and back");
-/// let json = serde_json::to_string(ustr::get_cache()).unwrap();
+/// let json = serde_json::to_string(ustr::cache()).unwrap();
 /// # }
 pub fn cache() -> &'static Bins {
     &STRING_CACHE
@@ -753,7 +753,7 @@ mod tests {
     //     );
     // }
 
-    #[cfg(all(feature = "serialization", not(miri)))]
+    #[cfg(all(feature="serde", not(miri)))]
     #[test]
     fn serialization() {
         let _t = TEST_LOCK.lock();
@@ -806,7 +806,7 @@ mod tests {
         assert_eq!(diff.len(), 0);
     }
 
-    #[cfg(all(feature = "serialization", not(miri)))]
+    #[cfg(all(feature="serde", not(miri)))]
     #[test]
     fn serialization_ustr() {
         use super::{ustr, Ustr};

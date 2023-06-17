@@ -64,7 +64,7 @@ map.insert(u1, 17);
 assert_eq!(*map.get(&u1).unwrap(), 17);
 ```
 
-By enabling the `"serialize"` feature you can serialize individual `Ustr`s or
+By enabling the `"serde"` feature you can serialize individual `Ustr`s or
 the whole cache with serde.
 
 ```rust
@@ -98,6 +98,9 @@ If you are writing a library that uses ustr and want users to be able to create
 `include/ustr.h` or `include/ustr.hpp` for function declarations.
 
 ## Changelog
+
+### Changes since 0.10
+* Actually renamed use of "serialization" feature to "serde"
 
 ### Changes since 0.9
 
