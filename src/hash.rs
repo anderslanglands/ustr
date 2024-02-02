@@ -33,6 +33,7 @@ impl Hasher for IdentityHasher {
 
 #[test]
 fn test_hashing() {
+    let _t = super::TEST_LOCK.lock();
     use crate::ustr as u;
 
     use std::hash::Hash;

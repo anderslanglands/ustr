@@ -579,13 +579,13 @@ pub fn string_cache_iter() -> StringCacheIterator {
 pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
 
 #[cfg(test)]
-mod tests {
-    use lazy_static::lazy_static;
-    use std::sync::Mutex;
+lazy_static::lazy_static! {
+    static ref TEST_LOCK: Mutex<()> = Mutex::new(());
+}
 
-    lazy_static! {
-        static ref TEST_LOCK: Mutex<()> = Mutex::new(());
-    }
+#[cfg(test)]
+mod tests {
+    use super::TEST_LOCK;
 
     #[test]
     fn it_works() {
@@ -809,6 +809,8 @@ mod tests {
     #[cfg(all(feature="serde", not(miri)))]
     #[test]
     fn serialization_ustr() {
+        let _t = TEST_LOCK.lock();
+
         use super::{ustr, Ustr};
 
         let u_hello = ustr("hello");
