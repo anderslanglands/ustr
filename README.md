@@ -39,15 +39,15 @@ is directy ported from OIIO.
 use ustr::{Ustr, ustr};
 
 // Creation is quick and easy using either `Ustr::from` or the `ustr` short
-// function and only one copy of any string is stored
+// function and only one copy of any string is stored.
 let h1 = Ustr::from("hello");
 let h2 = ustr("hello");
 
-// Comparisons and copies are extremely cheap
+// Comparisons and copies are extremely cheap.
 let h3 = h1;
 assert_eq!(h2, h3);
 
-// You can pass straight to FFI
+// You can pass straight to FFI.
 let len = unsafe {
     libc::strlen(h1.as_char_ptr())
 };
@@ -58,7 +58,7 @@ assert_eq!(len, 5);
 // the UstrMap and UstrSet exports:
 use ustr::UstrMap;
 
-// Key type is always Ustr
+// Key type is always Ustr.
 let mut map: UstrMap<usize> = UstrMap::default();
 map.insert(u1, 17);
 assert_eq!(*map.get(&u1).unwrap(), 17);
