@@ -100,7 +100,8 @@ If you are writing a library that uses ustr and want users to be able to create
 ## Changelog
 
 ### Changes since 0.10
-* Actually renamed use of "serialization" feature to "serde"
+
+* Actually renamed `serialization` feature to `serde`
 
 ### Changes since 0.9
 
@@ -334,11 +335,11 @@ I use it regularly on 64-bit systems, and it has passed Miri on a 32-bit system
 as well, bit 32-bit is not checked regularly. If you want to use it on 32-bit,
 please make sure to run Miri and open and issue if you find any problems.
 
-## Licence
+## License
 
 BSD+ License
 
-Copyright © 2019—2020 Anders Langlands
+Copyright © 2019—2024 Anders Langlands
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -387,9 +388,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Contains code ported from [OpenImageIO](https://github.com/OpenImageIO/oiio),
-BSD 3-clause licence.
+BSD 3-clause license.
 
-Contains a copy of Max Woolf's [Big List of Naughty Strings](https://github.com/minimaxir/big-list-of-naughty-strings), MIT licence.
+Contains a copy of Max Woolf's [Big List of Naughty Strings](https://github.com/minimaxir/big-list-of-naughty-strings),
+MIT license.
 
 Contains some strings from
-[SecLists](https://github.com/danielmiessler/SecLists), MIT licence.
+[SecLists](https://github.com/danielmiessler/SecLists), MIT license.

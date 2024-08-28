@@ -1,19 +1,26 @@
 //! Fast, FFI-friendly string interning. A [`Ustr`] (**U**nique **Str**) is a
 //! lightweight handle representing a static, immutable entry in a global string
 //! cache, allowing for:
+//!
 //! * Extremely fast string assignment and comparisons -- it's just a pointer
 //!   comparison.
+//!
 //! * Efficient storage -- only one copy of the string is held in memory, and
 //!   getting access to it is just a pointer indirection.
-//! * Fast hashing -- the precomputed hash is stored with the string
+//!
+//! * Fast hashing -- the precomputed hash is stored with the string.
+//!
 //! * Fast FFI -- the string is stored with a terminating null byte so can be
-//!   passed to C directly without doing the CString dance.
+//!   passed to C directly without doing the `CString` dance.
 //!
 //! The downside is no strings are ever freed, so if you're creating lots and
 //! lots of strings, you might run out of memory. On the other hand, War and
 //! Peace is only 3MB, so it's probably fine.
 //!
-//! This crate is based on [OpenImageIO's ustring](https://github.com/OpenImageIO/oiio/blob/master/src/include/OpenImageIO/ustring.h) but it is NOT binary-compatible (yet). The underlying hash map implementation is directy ported from OIIO.
+//! This crate is based on [OpenImageIO's](https://openimageio.readthedocs.io/en/v2.4.10.0/)
+//! (OIIO) [`ustring`](https://github.com/OpenImageIO/oiio/blob/master/src/include/OpenImageIO/ustring.h)
+//! but it is *not* binary-compatible (yet). The underlying hash map
+//! implementation is directy ported from OIIO.
 //!
 //! # Usage
 //!
@@ -22,21 +29,21 @@
 //!
 //! # unsafe { ustr::_clear_cache() };
 //! // Creation is quick and easy using either `Ustr::from` or the ustr function
-//! // and only one copy of any string is stored
+//! // and only one copy of any string is stored.
 //! let u1 = Ustr::from("the quick brown fox");
 //! let u2 = ustr("the quick brown fox");
 //!
-//! // Comparisons and copies are extremely cheap
+//! // Comparisons and copies are extremely cheap.
 //! let u3 = u1;
 //! assert_eq!(u2, u3);
 //!
-//! // You can pass straight to FFI
+//! // You can pass straight to FFI.
 //! let len = unsafe {
 //!     libc::strlen(u1.as_char_ptr())
 //! };
 //! assert_eq!(len, 19);
 //!
-//! // Use as_str() to get a &str
+//! // Use as_str() to get a &str.
 //! let words: Vec<&str> = u1.as_str().split_whitespace().collect();
 //! assert_eq!(words, ["the", "quick", "brown", "fox"]);
 //!
@@ -45,7 +52,7 @@
 //! // the UstrMap and UstrSet exports:
 //! use ustr::UstrMap;
 //!
-//! // Key type is always Ustr
+//! // Key type is always Ustr.
 //! let mut map: UstrMap<usize> = UstrMap::default();
 //! map.insert(u1, 17);
 //! assert_eq!(*map.get(&u1).unwrap(), 17);
@@ -89,12 +96,16 @@
 //!
 //!   - Each individual `Ustr` is very small -- in fact, we guarantee that a
 //!     `Ustr` is the same size and memory layout as an ordinary `*u8`.
+//!
 //!   - Storage is frugal, since there is only one allocated copy of each unique
 //!     character sequence, throughout the lifetime of the program.
+//!
 //!   - Assignment from one `Ustr` to another is just copy of the pointer; no
 //!     allocation, no character copying, no reference counting.
+//!
 //!   - Equality testing (do the strings contain the same characters) is a
 //!     single operation, the comparison of the pointer.
+//!
 //!   - Memory allocation only occurs when a new `Ustr` is constructed from raw
 //!     characters the FIRST time -- subsequent constructions of the same string
 //!     just finds it in the canonial string set, but doesn't need to allocate
@@ -108,25 +119,33 @@
 //! across.
 //!
 //! On the whole, `Ustr`s are a really great string representation
+//!
 //!   - if you tend to have (relatively) few unique strings, but many copies of
 //!     those strings;
+//!
 //!   - if the creation of strings from raw characters is relatively rare
 //!     compared to copying or comparing to existing strings;
+//!
 //!   - if you tend to make the same strings over and over again, and if it's
 //!     relatively rare that a single unique character sequence is used only
 //!     once in the entire lifetime of the program;
+//!
 //!   - if your most common string operations are assignment and equality
 //!     testing and you want them to be as fast as possible;
+//!
 //!   - if you are doing relatively little character-by-character assembly of
 //!     strings, string concatenation, or other "string manipulation" (other
 //!     than equality testing).
 //!
 //! `Ustr`s are not so hot
+//!
 //!   - if your program tends to have very few copies of each character sequence
 //!     over the entire lifetime of the program;
+//!
 //!   - if your program tends to generate a huge variety of unique strings over
 //!     its lifetime, each of which is used only a short time and then
 //!     discarded, never to be needed again;
+//!
 //!   - if you don't need to do a lot of string assignment or equality testing,
 //!     but lots of more complex string manipulation.
 //!
@@ -145,9 +164,9 @@ use std::str::FromStr;
 
 mod stringcache;
 pub use stringcache::*;
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 pub mod serialization;
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 pub use serialization::DeserializedCache;
 
 mod bumpalloc;
@@ -753,7 +772,7 @@ mod tests {
     //     );
     // }
 
-    #[cfg(all(feature="serde", not(miri)))]
+    #[cfg(all(feature = "serde", not(miri)))]
     #[test]
     fn serialization() {
         let _t = TEST_LOCK.lock();
@@ -806,7 +825,7 @@ mod tests {
         assert_eq!(diff.len(), 0);
     }
 
-    #[cfg(all(feature="serde", not(miri)))]
+    #[cfg(all(feature = "serde", not(miri)))]
     #[test]
     fn serialization_ustr() {
         use super::{ustr, Ustr};
