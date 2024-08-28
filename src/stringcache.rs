@@ -248,8 +248,8 @@ impl StringCache {
     // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
-        let mut new_entries =
-            vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
+        let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
+            vec![std::ptr::null_mut(); new_mask + 1];
         // copy the existing map into the new map
         let mut to_copy = self.num_entries;
         for e in self.entries.iter_mut() {

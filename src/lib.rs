@@ -200,6 +200,7 @@ impl Ord for Ustr {
 /// Defer to &str for equality - lexicographic ordering will be slower than
 /// pointer comparison, but much less surprising if you use Ustrs as keys in
 /// e.g. a BTreeMap
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Ustr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.as_str().partial_cmp(other.as_str())
