@@ -27,7 +27,7 @@ crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
 libc = "0.2"
 serde_json = "1"
-string-interner = "0.17"
+string-interner = "0.13"
 string_cache = "0.8"
 
 [[bench]]
