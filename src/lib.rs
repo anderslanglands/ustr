@@ -159,16 +159,20 @@
 //! find any problems.
 use parking_lot::Mutex;
 use std::{
+    borrow::Cow,
     cmp::Ordering,
-    ffi::CStr,
+    ffi::{CStr, OsStr},
     fmt,
     hash::{Hash, Hasher},
     mem::size_of,
     ops::Deref,
     os::raw::c_char,
+    path::Path,
     ptr::NonNull,
+    rc::Rc,
     slice, str,
     str::FromStr,
+    sync::Arc,
 };
 
 mod hash;
@@ -210,7 +214,7 @@ impl Ord for Ustr {
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Ustr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.as_str().partial_cmp(other.as_str())
+        Some(self.cmp(other))
     }
 }
 
@@ -336,10 +340,7 @@ impl Ustr {
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
         // The allocator guarantees that the alignment is correct and that
         // this pointer is non-null
-        unsafe {
-            &*((self.char_ptr.as_ptr() as usize - size_of::<StringCacheEntry>())
-                as *const StringCacheEntry)
-        }
+        unsafe { &*(self.char_ptr.as_ptr().cast::<StringCacheEntry>().sub(1)) }
     }
 
     /// Get the length (in bytes) of this string.
@@ -371,9 +372,40 @@ impl Ustr {
 unsafe impl Send for Ustr {}
 unsafe impl Sync for Ustr {}
 
+impl PartialEq<str> for Ustr {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<Ustr> for str {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == u.as_str()
+    }
+}
+
 impl PartialEq<&str> for Ustr {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
+    }
+}
+
+impl PartialEq<Ustr> for &str {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == u.as_str()
+    }
+}
+
+
+impl PartialEq<&&str> for Ustr {
+    fn eq(&self, other: &&&str) -> bool {
+        self.as_str() == **other
+    }
+}
+
+impl PartialEq<Ustr> for &&str {
+    fn eq(&self, u: &Ustr) -> bool {
+        **self == u.as_str()
     }
 }
 
@@ -383,11 +415,98 @@ impl PartialEq<String> for Ustr {
     }
 }
 
+impl PartialEq<Ustr> for String {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == u.as_str()
+    }
+}
+
+impl PartialEq<&String> for Ustr {
+    fn eq(&self, other: &&String) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Ustr> for &String {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == u.as_str()
+    }
+}
+
+impl PartialEq<Box<str>> for Ustr {
+    fn eq(&self, other: &Box<str>) -> bool {
+        self.as_str() == &**other
+    }
+}
+
+impl PartialEq<Ustr> for Box<str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &**self == u.as_str()
+    }
+}
+
+impl PartialEq<Ustr> for &Box<str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &***self == u.as_str()
+    }
+}
+
+impl PartialEq<Cow<'_, str>> for Ustr {
+    fn eq(&self, other: &Cow<'_, str>) -> bool {
+        self.as_str() == &*other
+    }
+}
+
+impl PartialEq<Ustr> for Cow<'_, str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &*self == u.as_str()
+    }
+}
+
+impl PartialEq<&Cow<'_, str>> for Ustr {
+    fn eq(&self, other: &&Cow<'_, str>) -> bool {
+        self.as_str() == &**other
+    }
+}
+
+impl PartialEq<Ustr> for &Cow<'_, str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &**self == u.as_str()
+    }
+}
+
+impl PartialEq<Ustr> for Path {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == Path::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for &Path {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == Path::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for OsStr {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == OsStr::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for &OsStr {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == OsStr::new(u)
+    }
+}
+
 impl Eq for Ustr {}
 
-impl AsRef<str> for Ustr {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+impl<T: ?Sized> AsRef<T> for Ustr
+where
+    str: AsRef<T>,
+{
+    fn as_ref(&self) -> &T {
+        self.as_str().as_ref()
     }
 }
 
@@ -412,9 +531,69 @@ impl From<Ustr> for &'static str {
     }
 }
 
+impl From<Ustr> for String {
+    fn from(u: Ustr) -> Self {
+        String::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Box<str> {
+    fn from(u: Ustr) -> Self {
+        Box::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Rc<str> {
+    fn from(u: Ustr) -> Self {
+        Rc::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Arc<str> {
+    fn from(u: Ustr) -> Self {
+        Arc::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Cow<'static, str> {
+    fn from(u: Ustr) -> Self {
+        Cow::Borrowed(u.as_str())
+    }
+}
+
 impl From<String> for Ustr {
     fn from(s: String) -> Ustr {
         Ustr::from(&s)
+    }
+}
+
+impl From<&String> for Ustr {
+    fn from(s: &String) -> Ustr {
+        Ustr::from(&**s)
+    }
+}
+
+impl From<Box<str>> for Ustr {
+    fn from(s: Box<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Rc<str>> for Ustr {
+    fn from(s: Rc<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Arc<str>> for Ustr {
+    fn from(s: Arc<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Cow<'_, str>> for Ustr {
+    fn from(s: Cow<'_, str>) -> Ustr {
+        Ustr::from(&*s)
     }
 }
 
@@ -445,7 +624,6 @@ impl fmt::Debug for Ustr {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
-#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Ustr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
@@ -606,16 +784,30 @@ pub fn string_cache_iter() -> StringCacheIterator {
         // points to the beginning of the allocated region. The first bytes will
         // be uninitialized since we're bumping down
         for a in &sc.old_allocs {
-            allocs.push((a.ptr(), a.end()));
+            // `LeakyBumpAlloc` in `old_allocs` may be "empty".
+            if a.ptr() < a.end() {
+                unsafe {
+                    allocs.push(std::slice::from_raw_parts(
+                        a.ptr(),
+                        a.allocated(),
+                    ));
+                }
+            }
         }
-        let ptr = sc.alloc.ptr();
-        let end = sc.alloc.end();
-        if ptr != end {
-            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
+        if sc.alloc.ptr() < sc.alloc.end() {
+            unsafe {
+                allocs.push(std::slice::from_raw_parts(
+                    sc.alloc.ptr(),
+                    sc.alloc.allocated(),
+                ));
+            }
         }
     }
 
-    let current_ptr = allocs[0].0;
+    let current_ptr = allocs
+        .first()
+        .map(|s| s.as_ptr())
+        .unwrap_or_else(std::ptr::null);
     StringCacheIterator {
         allocs,
         current_alloc: 0,
@@ -631,13 +823,20 @@ pub fn string_cache_iter() -> StringCacheIterator {
 pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
 
 #[cfg(test)]
+lazy_static::lazy_static! {
+    static ref TEST_LOCK: Mutex<()> = Mutex::new(());
+}
+
+#[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
+    use std::ffi::OsStr;
+    use std::path::Path;
     use std::sync::Mutex;
 
-    lazy_static! {
-        static ref TEST_LOCK: Mutex<()> = Mutex::new(());
-    }
+#[cfg(test)]
+mod tests {
+    use super::TEST_LOCK;
 
     #[test]
     fn it_works() {
@@ -861,6 +1060,8 @@ mod tests {
     #[cfg(all(feature = "serde", not(miri)))]
     #[test]
     fn serialization_ustr() {
+        let _t = TEST_LOCK.lock();
+
         use super::{ustr, Ustr};
 
         let u_hello = ustr("hello");
@@ -916,6 +1117,41 @@ mod tests {
         let s1 = ustr("hello world!");
         let s2 = existing_ustr("hello world!");
         assert_eq!(Some(s1), s2);
+    }
+
+    #[test]
+    fn test_emtpy_cache() {
+        unsafe { super::_clear_cache() };
+        assert_eq!(
+            super::string_cache_iter().collect::<Vec<_>>(),
+            Vec::<&'static str>::new()
+        );
+      
+    #[test]
+    fn as_refs() {
+        let _t = TEST_LOCK.lock();
+
+        let u = super::ustr("test");
+
+        let s: String = u.to_owned();
+        assert_eq!(u, s);
+        assert_eq!(s, u);
+
+        let p: &Path = u.as_ref();
+        assert_eq!(p, u);
+
+        let _: &[u8] = u.as_ref();
+
+        let o: &OsStr = u.as_ref();
+        assert_eq!(p, o);
+        assert_eq!(o, p);
+
+        let cow = std::borrow::Cow::from(u);
+        assert_eq!(cow, u);
+        assert_eq!(u, cow);
+
+        let boxed: Box<str> = u.into();
+        assert_eq!(boxed, u);
     }
 }
 

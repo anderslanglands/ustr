@@ -250,8 +250,10 @@ impl StringCache {
     // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
+
         let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
             vec![std::ptr::null_mut(); new_mask + 1];
+
         // copy the existing map into the new map
         let mut to_copy = self.num_entries;
         for e in self.entries.iter_mut() {
@@ -331,7 +333,7 @@ unsafe impl Send for StringCache {}
 
 #[doc(hidden)]
 pub struct StringCacheIterator {
-    pub(crate) allocs: Vec<(*const u8, *const u8)>,
+    pub(crate) allocs: Vec<&'static [u8]>,
     pub(crate) current_alloc: usize,
     pub(crate) current_ptr: *const u8,
 }
@@ -353,8 +355,8 @@ impl Iterator for StringCacheIterator {
             } else {
                 // Advance to the next alloc.
                 self.current_alloc += 1;
-                let (current_ptr, _) = self.allocs[self.current_alloc];
-                self.current_ptr = current_ptr;
+                s = self.allocs[self.current_alloc];
+                self.current_ptr = s.as_ptr();
             }
         }
 
@@ -394,7 +396,6 @@ impl StringCacheEntry {
     // Calcualte the address of the next entry in the cache. This is a utility
     // function to hide the pointer arithmetic in iterators.
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
-        #[allow(clippy::ptr_offset_with_cast)]
         self.char_ptr().add(round_up_to(
             self.len + 1,
             std::mem::align_of::<StringCacheEntry>(),
