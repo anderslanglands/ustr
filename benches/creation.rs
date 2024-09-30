@@ -10,10 +10,7 @@ use string_interner::StringInterner;
 
 use ustr::*;
 
-#[cfg(not(feature = "spinlock"))]
 use parking_lot::Mutex;
-#[cfg(feature = "spinlock")]
-use spin::Mutex;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let path =

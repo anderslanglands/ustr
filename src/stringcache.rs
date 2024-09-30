@@ -1,12 +1,12 @@
 use super::bumpalloc::LeakyBumpAlloc;
 
-// StringCache stores a Vec of pointers to the StringCacheEntry structs. The
-// actual memory for the StringCacheEntry is stored in the LeakyBumpAlloc, and
-// each Alloc is rotated out when it's full and a new one twice its size is
-// allocated. The Allocator memory is never freed so our strings essentialy have
-// a 'static lifetime.
+// `StringCache` stores a `Vec` of pointers to the `StringCacheEntry` structs.
+// The actual memory for the `StringCacheEntry` is stored in the LeakyBumpAlloc,
+// and each `Alloc` is rotated out when it's full and a new one twice its size
+// is allocated. The Allocator memory is never freed so our strings essentialy
+// have a 'static lifetime.
 //
-// The actual memory representation is as follows. Each StringCacheEntry is
+// The actual memory representation is as follows. Each `StringCacheEntry` is
 // aligned to 8 bytes on a 64-bit system. The 64-bit memoized hash of the string
 // is stored first, then a usize length, then the u8 characters, followed by a
 // null terminator (not included in len), then x<8 bytes of uninitialized memory
@@ -18,14 +18,14 @@ use super::bumpalloc::LeakyBumpAlloc;
 // ^ StringCacheEntry              ^ u8 chars               ^ null ^ Next entry
 //
 // Proper alignment is guaranteed when allocating each entry as the alignment
-// is baked into the allocator. StringCache is responsible for monitoring the
-// Allocator and creating a new one when it would overflow - the Alloc itself
-// will just abort() if it runs out of memory. Note that we abort() rather than
-// panic because the behaviour of the spinlock in case of a panic while holding
-// the lock is undefined.
+// is baked into the allocator. `StringCache` is responsible for monitoring the
+// Allocator and creating a new one when it would overflow -- the `Alloc` itself
+// will just `abort()` if it runs out of memory. Note that we abort() rather
+// than panic because the behaviour of the spinlock in case of a panic while
+// holding the lock is undefined.
 //
-// Thread safety is ensured because we can only access the StringCache through
-// the spinlock in the lazy_static ref. The initial capacity of the cache is
+// Thread safety is ensured because we can only access the `StringCache` through
+// the spinlock in the `lazy_static` ref. The initial capacity of the cache is
 // divided evenly among a number of 'bins' or shards each with their own lock,
 // in order to reduce contention.
 #[repr(align(128))]
@@ -36,9 +36,9 @@ pub(crate) struct StringCache {
     num_entries: usize,
     mask: usize,
     total_allocated: usize,
-    // padding and aligning to 128 bytes gives up to 20% performance
+    // Padding and aligning to 128 bytes gives up to 20% performance
     // improvement this actually aligns to 256 bytes because of the Mutex
-    // around it
+    // around it.
     _pad: [u32; 3],
 }
 
@@ -63,13 +63,13 @@ impl StringCache {
             std::mem::align_of::<StringCacheEntry>(),
         );
         StringCache {
-            // current allocator
+            // Current allocator.
             alloc,
-            // old allocators we'll keep around for iteration purposes.
+            // Old allocators we'll keep around for iteration purposes.
             // 16 would mean we've allocated 128GB of string storage since we
             // double each time.
             old_allocs: Vec::with_capacity(16),
-            // Vector of pointers to the StringCacheEntry headers
+            // Vector of pointers to the `StringCacheEntry` headers.
             entries: vec![std::ptr::null_mut(); capacity],
             num_entries: 0,
             mask: capacity - 1,
@@ -91,14 +91,14 @@ impl StringCache {
                 return None;
             }
             // This is safe as long as entry points to a valid address and the
-            // layout described in the StringCache doc comment holds.
+            // layout described in the `StringCache` doc comment holds.
             unsafe {
-                // entry is a *StringCacheEntry so offseting by 1 gives us a
+                // entry is a `*StringCacheEntry` so offseting by 1 gives us a
                 // pointer to the end of the entry, aka the beginning of the
                 // chars.
                 // As long as the memory is valid and the layout is correct,
                 // we're safe to create a string slice from the chars since
-                // they were copied directly from a valid &str.
+                // they were copied directly from a valid `str`.
                 let entry_chars = entry.add(1) as *const u8;
                 // if entry is non-null then it must point to a valid
                 // StringCacheEntry
@@ -114,14 +114,14 @@ impl StringCache {
                 }
             }
 
-            // keep looking
+            // Keep looking.
             dist += 1;
             debug_assert!(dist <= self.mask);
             pos = (pos + dist) & self.mask;
         }
     }
 
-    // Insert the given string with its given hash into the cache
+    // Insert the given string with its given hash into the cache.
     pub(crate) fn insert(&mut self, string: &str, hash: u64) -> *const u8 {
         let mut pos = self.mask & hash as usize;
         let mut dist = 0;
@@ -133,17 +133,17 @@ impl StringCache {
             }
 
             // This is safe as long as entry points to a valid address and the
-            // layout described in the StringCache doc comment holds.
+            // layout described in the `StringCache` doc comment holds.
             unsafe {
-                // entry is a *StringCacheEntry so offseting by 1 gives us a
+                // entry is a `*StringCacheEntry` so offseting by 1 gives us a
                 // pointer to the end of the entry, aka the beginning of the
                 // chars.
                 // As long as the memory is valid and the layout is correct,
                 // we're safe to create a string slice from the chars since
-                // they were copied directly from a valid &str.
+                // they were copied directly from a valid `str`.
                 let entry_chars = entry.add(1) as *const u8;
-                // if entry is non-null then it must point to a valid
-                // StringCacheEntry
+                // If entry is non-null then it must point to a valid
+                // `StringCacheEntry`.
                 let sce = &**entry;
                 if sce.hash == hash
                     && sce.len == string.len()
@@ -163,16 +163,16 @@ impl StringCache {
         }
 
         //
-        // insert the new string
+        // Insert the new string.
         //
 
-        // we know pos is in bounds as it's &ed with the mask above
+        // We know pos is in bounds as it's &ed with the mask above.
         let entry_ptr = unsafe { self.entries.get_unchecked_mut(pos) };
-        // add one to length for null byte
-        // there's no way we could overflow here in practice since that would
-        // require having allocated a u64::MAX-length string, by which time
+        // Ddd one to length for null byte.
+        // There's no way we could overflow here in practice since that would
+        // require having allocated a `u64::MAX`-length string, by which time
         // we'll be using 128-bit pointers and we'll need to rewrite this
-        // crate anyway
+        // crate anyway.
         let byte_len = string.len() + 1;
         let alloc_size = std::mem::size_of::<StringCacheEntry>() + byte_len;
 
@@ -201,18 +201,18 @@ impl StringCache {
         }
 
         // This is safe as long as:
-        // 1. alloc_size is calculated correctly
+        // 1. `alloc_size` is calculated correctly.
         // 2. there is enough space in the allocator (checked in the block
-        //    above)
-        // 3. The StringCacheEntry layout descibed above holds and the memory
+        //    above).
+        // 3. The `StringCacheEntry` layout descibed above holds and the memory
         //    returned by allocate() is prooperly aligned.
         unsafe {
             *entry_ptr =
                 self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
 
-            // write the header
-            // entry_ptr is guaranteed to point to a valid StringCacheEntry, or
-            // alloc.allocate() would have aborted
+            // Write the header.
+            // `entry_ptr` is guaranteed to point to a valid `StringCacheEntry`,
+            // or `alloc.allocate()` would have aborted.
             std::ptr::write(
                 *entry_ptr,
                 StringCacheEntry {
@@ -220,20 +220,20 @@ impl StringCache {
                     len: string.len(),
                 },
             );
-            // write the characters after the StringCacheEntry
+            // Write the characters after the `StringCacheEntry`.
             let char_ptr = entry_ptr.add(1) as *mut u8;
             std::ptr::copy_nonoverlapping(
                 string.as_bytes().as_ptr(),
                 char_ptr,
                 string.len(),
             );
-            // write the trailing null
+            // Write the trailing null.
             let write_ptr = char_ptr.add(string.len());
             std::ptr::write(write_ptr, 0u8);
 
             self.num_entries += 1;
-            // we want to keep an 0.5 load factor for the map, so grow if we've
-            // exceeded that
+            // We want to keep an 0.5 load factor for the map, so grow if we've
+            // exceeded that.
             if self.num_entries * 2 > self.mask {
                 self.grow();
             }
@@ -242,14 +242,18 @@ impl StringCache {
         }
     }
 
-    // Double the size of the map storage
-    // This is safe as long as
-    // - The in-memory layout of the StringCacheEntry is correct
+    // Double the size of the map storage.
+    //
+    // This is safe as long as:
+    // - The in-memory layout of the `StringCacheEntry` is correct.
+    //
     // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
-        let mut new_entries =
-            vec![std::ptr::null_mut::<StringCacheEntry>(); new_mask + 1];
+
+        let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
+            vec![std::ptr::null_mut(); new_mask + 1];
+
         // copy the existing map into the new map
         let mut to_copy = self.num_entries;
         for e in self.entries.iter_mut() {
@@ -257,19 +261,19 @@ impl StringCache {
                 continue;
             }
 
-            // start of the entry is the hash
+            // Start of the entry is the hash.
             let hash = *(*e as *const u64);
             let mut pos = (hash as usize) & new_mask;
             let mut dist = 0;
             loop {
                 if new_entries[pos].is_null() {
-                    // here's an empty slot to put the pointer in
+                    // Here's an empty slot to put the pointer in.
                     break;
                 }
 
                 dist += 1;
                 // This should be impossble as we've allocated twice as many
-                // slots as we have entries
+                // slots as we have entries.
                 debug_assert!(dist <= new_mask, "Probing wrapped around");
                 pos = pos.wrapping_add(dist) & new_mask;
             }
@@ -285,8 +289,8 @@ impl StringCache {
         self.mask = new_mask;
     }
 
-    // This is only called by clear() during tests to clear the cache between
-    // runs. DO NOT CALL THIS.
+    // This is only called by `clear()` during tests to clear the cache between
+    // runs. **DO NOT CALL THIS**.
     pub(crate) unsafe fn clear(&mut self) {
         // just zero all the pointers that have already been set
         std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
@@ -324,7 +328,7 @@ impl Default for StringCache {
     }
 }
 
-// We are safe to be Send but not Sync (we get Sync by wrapping in a mutex)
+// We are safe to be `Send` but not `Sync` (we get Sync by wrapping in a mutex).
 unsafe impl Send for StringCache {}
 
 #[doc(hidden)]
@@ -342,35 +346,34 @@ fn round_up_to(n: usize, align: usize) -> usize {
 impl Iterator for StringCacheIterator {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.allocs.is_empty() {
-            return None;
-        }
-
-        let mut s = self.allocs[self.current_alloc];
-        if self.current_ptr >= unsafe { s.as_ptr().add(s.len()) } {
-            // we've reached the end of the current alloc
+        let (_, end) = self.allocs[self.current_alloc];
+        if self.current_ptr >= end {
+            // We've reached the end of the current alloc.
             if self.current_alloc == self.allocs.len() - 1 {
-                // we've reached the end
+                // We've reached the end.
                 return None;
             } else {
-                // advance to the next alloc
+                // Advance to the next alloc.
                 self.current_alloc += 1;
                 s = self.allocs[self.current_alloc];
                 self.current_ptr = s.as_ptr();
             }
         }
 
-        // Cast the current ptr to a StringCacheEntry and create the next string
-        // from it.
+        // Cast the current ptr to a `StringCacheEntry` and create the next
+        // string from it.
         unsafe {
             let sce = &*(self.current_ptr as *const StringCacheEntry);
-            // the next entry will be the size of the number of bytes in the
-            // string, +1 for the null byte, rounded up to the alignment (8)
+            // The next entry will be the size of the number of bytes in the
+            // string, +1 for the null byte, rounded up to the alignment (8).
             self.current_ptr = sce.next_entry();
 
-            // we know we're safe not to check here since we put valid UTF-8 in
-            let pos = sce.char_ptr() as usize - s.as_ptr() as usize;
-            Some(std::str::from_utf8_unchecked(&s[pos..(pos + sce.len)]))
+            // We know we're safe not to check here since we put valid UTF-8 in.
+            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                sce.char_ptr(),
+                sce.len,
+            ));
+            Some(s)
         }
     }
 }
@@ -383,15 +386,15 @@ pub(crate) struct StringCacheEntry {
 }
 
 impl StringCacheEntry {
-    // get the pointer to the characters
+    // Get the pointer to the characters.
     pub(crate) fn char_ptr(&self) -> *const u8 {
-        // we know the chars are always directly after this struct in memory
-        // because that's the way they're laid out on initialization
+        // We know the chars are always directly after this struct in memory
+        // because that's the way they're laid out on initialization.
         unsafe { (self as *const StringCacheEntry).add(1) as *const u8 }
     }
 
     // Calcualte the address of the next entry in the cache. This is a utility
-    // function to hide the pointer arithmetic in iterators
+    // function to hide the pointer arithmetic in iterators.
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
         self.char_ptr().add(round_up_to(
             self.len + 1,
