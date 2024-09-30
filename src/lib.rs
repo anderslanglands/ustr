@@ -142,6 +142,7 @@ use parking_lot::Mutex;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt;
+
 use std::mem::size_of;
 use std::path::Path;
 use std::rc::Rc;
@@ -150,9 +151,9 @@ use std::sync::Arc;
 
 mod stringcache;
 pub use stringcache::*;
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 pub mod serialization;
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 pub use serialization::DeserializedCache;
 
 mod bumpalloc;
@@ -188,7 +189,7 @@ impl Ord for Ustr {
 /// e.g. a BTreeMap
 impl PartialOrd for Ustr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.as_str().partial_cmp(other.as_str())
+        Some(self.cmp(other))
     }
 }
 
@@ -302,10 +303,7 @@ impl Ustr {
     fn as_string_cache_entry(&self) -> &StringCacheEntry {
         // The allocator guarantees that the alignment is correct and that
         // this pointer is non-null
-        unsafe {
-            &*((self.char_ptr.as_ptr() as usize - size_of::<StringCacheEntry>())
-                as *const StringCacheEntry)
-        }
+        unsafe { &*(self.char_ptr.as_ptr().cast::<StringCacheEntry>().sub(1)) }
     }
 
     /// Get the length (in bytes) of this string.
@@ -589,7 +587,6 @@ impl fmt::Debug for Ustr {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
-#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Ustr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
@@ -741,16 +738,30 @@ pub fn string_cache_iter() -> StringCacheIterator {
         // points to the beginning of the allocated region. The first bytes will
         // be uninitialized since we're bumping down
         for a in &sc.old_allocs {
-            allocs.push((a.ptr(), a.end()));
+            // `LeakyBumpAlloc` in `old_allocs` may be "empty".
+            if a.ptr() < a.end() {
+                unsafe {
+                    allocs.push(std::slice::from_raw_parts(
+                        a.ptr(),
+                        a.allocated(),
+                    ));
+                }
+            }
         }
-        let ptr = sc.alloc.ptr();
-        let end = sc.alloc.end();
-        if ptr != end {
-            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
+        if sc.alloc.ptr() < sc.alloc.end() {
+            unsafe {
+                allocs.push(std::slice::from_raw_parts(
+                    sc.alloc.ptr(),
+                    sc.alloc.allocated(),
+                ));
+            }
         }
     }
 
-    let current_ptr = allocs[0].0;
+    let current_ptr = allocs
+        .first()
+        .map(|s| s.as_ptr())
+        .unwrap_or_else(std::ptr::null);
     StringCacheIterator {
         allocs,
         current_alloc: 0,
@@ -938,7 +949,7 @@ mod tests {
     //     );
     // }
 
-    #[cfg(all(feature="serde", not(miri)))]
+    #[cfg(all(feature = "serde", not(miri)))]
     #[test]
     fn serialization() {
         let _t = TEST_LOCK.lock();
@@ -991,7 +1002,7 @@ mod tests {
         assert_eq!(diff.len(), 0);
     }
 
-    #[cfg(all(feature="serde", not(miri)))]
+    #[cfg(feature = "serde")]
     #[test]
     fn serialization_ustr() {
         use super::{ustr, Ustr};
@@ -1051,6 +1062,14 @@ mod tests {
         assert_eq!(Some(s1), s2);
     }
 
+    #[test]
+    fn test_emtpy_cache() {
+        unsafe { super::_clear_cache() };
+        assert_eq!(
+            super::string_cache_iter().collect::<Vec<_>>(),
+            Vec::<&'static str>::new()
+        );
+      
     #[test]
     fn as_refs() {
         let _t = TEST_LOCK.lock();

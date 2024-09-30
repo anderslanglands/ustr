@@ -249,7 +249,7 @@ impl StringCache {
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
         let mut new_entries =
-            vec![std::ptr::null_mut() as *mut StringCacheEntry; new_mask + 1];
+            vec![std::ptr::null_mut::<StringCacheEntry>(); new_mask + 1];
         // copy the existing map into the new map
         let mut to_copy = self.num_entries;
         for e in self.entries.iter_mut() {
@@ -329,7 +329,7 @@ unsafe impl Send for StringCache {}
 
 #[doc(hidden)]
 pub struct StringCacheIterator {
-    pub(crate) allocs: Vec<(*const u8, *const u8)>,
+    pub(crate) allocs: Vec<&'static [u8]>,
     pub(crate) current_alloc: usize,
     pub(crate) current_ptr: *const u8,
 }
@@ -342,8 +342,12 @@ fn round_up_to(n: usize, align: usize) -> usize {
 impl Iterator for StringCacheIterator {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
-        let (_, end) = self.allocs[self.current_alloc];
-        if self.current_ptr >= end {
+        if self.allocs.is_empty() {
+            return None;
+        }
+
+        let mut s = self.allocs[self.current_alloc];
+        if self.current_ptr >= unsafe { s.as_ptr().add(s.len()) } {
             // we've reached the end of the current alloc
             if self.current_alloc == self.allocs.len() - 1 {
                 // we've reached the end
@@ -351,8 +355,8 @@ impl Iterator for StringCacheIterator {
             } else {
                 // advance to the next alloc
                 self.current_alloc += 1;
-                let (current_ptr, _) = self.allocs[self.current_alloc];
-                self.current_ptr = current_ptr;
+                s = self.allocs[self.current_alloc];
+                self.current_ptr = s.as_ptr();
             }
         }
 
@@ -365,11 +369,8 @@ impl Iterator for StringCacheIterator {
             self.current_ptr = sce.next_entry();
 
             // we know we're safe not to check here since we put valid UTF-8 in
-            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                sce.char_ptr(),
-                sce.len,
-            ));
-            Some(s)
+            let pos = sce.char_ptr() as usize - s.as_ptr() as usize;
+            Some(std::str::from_utf8_unchecked(&s[pos..(pos + sce.len)]))
         }
     }
 }
@@ -392,7 +393,6 @@ impl StringCacheEntry {
     // Calcualte the address of the next entry in the cache. This is a utility
     // function to hide the pointer arithmetic in iterators
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
-        #[allow(clippy::ptr_offset_with_cast)]
         self.char_ptr().add(round_up_to(
             self.len + 1,
             std::mem::align_of::<StringCacheEntry>(),
