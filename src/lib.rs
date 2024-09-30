@@ -396,7 +396,6 @@ impl PartialEq<Ustr> for &str {
     }
 }
 
-
 impl PartialEq<&&str> for Ustr {
     fn eq(&self, other: &&&str) -> bool {
         self.as_str() == **other
@@ -784,30 +783,18 @@ pub fn string_cache_iter() -> StringCacheIterator {
         // points to the beginning of the allocated region. The first bytes will
         // be uninitialized since we're bumping down
         for a in &sc.old_allocs {
-            // `LeakyBumpAlloc` in `old_allocs` may be "empty".
-            if a.ptr() < a.end() {
-                unsafe {
-                    allocs.push(std::slice::from_raw_parts(
-                        a.ptr(),
-                        a.allocated(),
-                    ));
-                }
-            }
+            allocs.push((a.ptr(), a.end()));
         }
-        if sc.alloc.ptr() < sc.alloc.end() {
-            unsafe {
-                allocs.push(std::slice::from_raw_parts(
-                    sc.alloc.ptr(),
-                    sc.alloc.allocated(),
-                ));
-            }
+        let ptr = sc.alloc.ptr();
+        let end = sc.alloc.end();
+        if ptr != end {
+            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
         }
     }
 
-    let current_ptr = allocs
-        .first()
-        .map(|s| s.as_ptr())
-        .unwrap_or_else(std::ptr::null);
+    let current_ptr =
+        allocs.first().map(|s| s.0).unwrap_or_else(std::ptr::null);
+
     StringCacheIterator {
         allocs,
         current_alloc: 0,
@@ -829,14 +816,11 @@ lazy_static::lazy_static! {
 
 #[cfg(test)]
 mod tests {
+    use super::TEST_LOCK;
     use lazy_static::lazy_static;
     use std::ffi::OsStr;
     use std::path::Path;
     use std::sync::Mutex;
-
-#[cfg(test)]
-mod tests {
-    use super::TEST_LOCK;
 
     #[test]
     fn it_works() {
@@ -1120,13 +1104,14 @@ mod tests {
     }
 
     #[test]
-    fn test_emtpy_cache() {
+    fn test_empty_cache() {
         unsafe { super::_clear_cache() };
         assert_eq!(
             super::string_cache_iter().collect::<Vec<_>>(),
             Vec::<&'static str>::new()
         );
-      
+    }
+
     #[test]
     fn as_refs() {
         let _t = TEST_LOCK.lock();

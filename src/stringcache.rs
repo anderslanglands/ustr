@@ -333,7 +333,7 @@ unsafe impl Send for StringCache {}
 
 #[doc(hidden)]
 pub struct StringCacheIterator {
-    pub(crate) allocs: Vec<&'static [u8]>,
+    pub(crate) allocs: Vec<(*const u8, *const u8)>,
     pub(crate) current_alloc: usize,
     pub(crate) current_ptr: *const u8,
 }
@@ -346,6 +346,11 @@ fn round_up_to(n: usize, align: usize) -> usize {
 impl Iterator for StringCacheIterator {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
+        // check that the cache is not empty before accessing
+        if self.allocs.is_empty() {
+            return None;
+        }
+
         let (_, end) = self.allocs[self.current_alloc];
         if self.current_ptr >= end {
             // We've reached the end of the current alloc.
@@ -355,8 +360,8 @@ impl Iterator for StringCacheIterator {
             } else {
                 // Advance to the next alloc.
                 self.current_alloc += 1;
-                s = self.allocs[self.current_alloc];
-                self.current_ptr = s.as_ptr();
+                let (current_ptr, _) = self.allocs[self.current_alloc];
+                self.current_ptr = current_ptr;
             }
         }
 
@@ -396,6 +401,7 @@ impl StringCacheEntry {
     // Calcualte the address of the next entry in the cache. This is a utility
     // function to hide the pointer arithmetic in iterators.
     pub(crate) unsafe fn next_entry(&self) -> *const u8 {
+        #[allow(clippy::ptr_offset_with_cast)]
         self.char_ptr().add(round_up_to(
             self.len + 1,
             std::mem::align_of::<StringCacheEntry>(),

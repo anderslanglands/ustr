@@ -99,6 +99,16 @@ If you are writing a library that uses ustr and want users to be able to create
 
 ## Changelog
 
+### Changes since 1.0.0
+
+* [Add a bunch of trait implementations that make it easier to work with stringy types](https://github.com/anderslanglands/ustr/pull/40). Thanks to @kornelski.
+* [Disable unused ahash features by default](https://github.com/anderslanglands/ustr/pull/46) to fix compilation on `wasm-unknown-unknown`. Thanks to @stephanemagnenat.
+
+* [Fix panic if string cache is empty](https://github.com/anderslanglands/ustr/pull/44) and assorted miri warnings and errors. Thanks to @orzogc.
+
+* [Bump versions of byteorder, lazy_static, ahash](https://github.com/anderslanglands/ustr/pull/49) and add additional documentation. Thanks to @virtualritz.
+
+
 ### Changes since 0.10
 
 * Actually renamed `serialization` feature to `serde`
