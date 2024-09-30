@@ -164,7 +164,6 @@ use std::{
     ffi::{CStr, OsStr},
     fmt,
     hash::{Hash, Hasher},
-    mem::size_of,
     ops::Deref,
     os::raw::c_char,
     path::Path,
