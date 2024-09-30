@@ -139,8 +139,15 @@
 //! use it on 32-bit, please make sure to run Miri and open and issue if you
 //! find any problems.
 use parking_lot::Mutex;
+use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::fmt;
+
+use std::mem::size_of;
+use std::path::Path;
+use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 mod stringcache;
 pub use stringcache::*;
@@ -328,9 +335,40 @@ impl Ustr {
 unsafe impl Send for Ustr {}
 unsafe impl Sync for Ustr {}
 
+impl PartialEq<str> for Ustr {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<Ustr> for str {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == u.as_str()
+    }
+}
+
 impl PartialEq<&str> for Ustr {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
+    }
+}
+
+impl PartialEq<Ustr> for &str {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == u.as_str()
+    }
+}
+
+
+impl PartialEq<&&str> for Ustr {
+    fn eq(&self, other: &&&str) -> bool {
+        self.as_str() == **other
+    }
+}
+
+impl PartialEq<Ustr> for &&str {
+    fn eq(&self, u: &Ustr) -> bool {
+        **self == u.as_str()
     }
 }
 
@@ -340,11 +378,98 @@ impl PartialEq<String> for Ustr {
     }
 }
 
+impl PartialEq<Ustr> for String {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == u.as_str()
+    }
+}
+
+impl PartialEq<&String> for Ustr {
+    fn eq(&self, other: &&String) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Ustr> for &String {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == u.as_str()
+    }
+}
+
+impl PartialEq<Box<str>> for Ustr {
+    fn eq(&self, other: &Box<str>) -> bool {
+        self.as_str() == &**other
+    }
+}
+
+impl PartialEq<Ustr> for Box<str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &**self == u.as_str()
+    }
+}
+
+impl PartialEq<Ustr> for &Box<str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &***self == u.as_str()
+    }
+}
+
+impl PartialEq<Cow<'_, str>> for Ustr {
+    fn eq(&self, other: &Cow<'_, str>) -> bool {
+        self.as_str() == &*other
+    }
+}
+
+impl PartialEq<Ustr> for Cow<'_, str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &*self == u.as_str()
+    }
+}
+
+impl PartialEq<&Cow<'_, str>> for Ustr {
+    fn eq(&self, other: &&Cow<'_, str>) -> bool {
+        self.as_str() == &**other
+    }
+}
+
+impl PartialEq<Ustr> for &Cow<'_, str> {
+    fn eq(&self, u: &Ustr) -> bool {
+        &**self == u.as_str()
+    }
+}
+
+impl PartialEq<Ustr> for Path {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == Path::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for &Path {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == Path::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for OsStr {
+    fn eq(&self, u: &Ustr) -> bool {
+        self == OsStr::new(u)
+    }
+}
+
+impl PartialEq<Ustr> for &OsStr {
+    fn eq(&self, u: &Ustr) -> bool {
+        *self == OsStr::new(u)
+    }
+}
+
 impl Eq for Ustr {}
 
-impl AsRef<str> for Ustr {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+impl<T: ?Sized> AsRef<T> for Ustr
+where
+    str: AsRef<T>,
+{
+    fn as_ref(&self) -> &T {
+        self.as_str().as_ref()
     }
 }
 
@@ -369,9 +494,69 @@ impl From<Ustr> for &'static str {
     }
 }
 
+impl From<Ustr> for String {
+    fn from(u: Ustr) -> Self {
+        String::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Box<str> {
+    fn from(u: Ustr) -> Self {
+        Box::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Rc<str> {
+    fn from(u: Ustr) -> Self {
+        Rc::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Arc<str> {
+    fn from(u: Ustr) -> Self {
+        Arc::from(u.as_str())
+    }
+}
+
+impl From<Ustr> for Cow<'static, str> {
+    fn from(u: Ustr) -> Self {
+        Cow::Borrowed(u.as_str())
+    }
+}
+
 impl From<String> for Ustr {
     fn from(s: String) -> Ustr {
         Ustr::from(&s)
+    }
+}
+
+impl From<&String> for Ustr {
+    fn from(s: &String) -> Ustr {
+        Ustr::from(&**s)
+    }
+}
+
+impl From<Box<str>> for Ustr {
+    fn from(s: Box<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Rc<str>> for Ustr {
+    fn from(s: Rc<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Arc<str>> for Ustr {
+    fn from(s: Arc<str>) -> Ustr {
+        Ustr::from(&*s)
+    }
+}
+
+impl From<Cow<'_, str>> for Ustr {
+    fn from(s: Cow<'_, str>) -> Ustr {
+        Ustr::from(&*s)
     }
 }
 
@@ -590,6 +775,8 @@ pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
+    use std::ffi::OsStr;
+    use std::path::Path;
     use std::sync::Mutex;
 
     lazy_static! {
@@ -882,6 +1069,32 @@ mod tests {
             super::string_cache_iter().collect::<Vec<_>>(),
             Vec::<&'static str>::new()
         );
+      
+    #[test]
+    fn as_refs() {
+        let _t = TEST_LOCK.lock();
+
+        let u = super::ustr("test");
+
+        let s: String = u.to_owned();
+        assert_eq!(u, s);
+        assert_eq!(s, u);
+
+        let p: &Path = u.as_ref();
+        assert_eq!(p, u);
+
+        let _: &[u8] = u.as_ref();
+
+        let o: &OsStr = u.as_ref();
+        assert_eq!(p, o);
+        assert_eq!(o, p);
+
+        let cow = std::borrow::Cow::from(u);
+        assert_eq!(cow, u);
+        assert_eq!(u, cow);
+
+        let boxed: Box<str> = u.into();
+        assert_eq!(boxed, u);
     }
 }
 
