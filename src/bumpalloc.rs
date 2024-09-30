@@ -56,7 +56,7 @@ impl LeakyBumpAlloc {
             std::process::abort();
         }
 
-        self.ptr = new_ptr as *mut u8;
+        self.ptr = self.ptr.sub(ptr - new_ptr);
         self.ptr
     }
 
