@@ -14,13 +14,21 @@ categories = ["caching", "data-structures"]
 [badges]
 travis-ci = { repository = "anderslanglands/ustr", branch = "master" }
 
+[features]
+default = []
+## Enables several functions that allow interaction with the global string
+## cache.
+cache_access = []
+## Enables serializing/deserializing the global string cache.
+serde = ["dep:serde"]
+
 [dependencies]
+ahash = { version = "0.8", default-features = false }
 byteorder = "1.5"
+document-features = "0.2"
 lazy_static = "1.5"
 parking_lot = "0.12"
 serde = { version = "1", optional = true }
-ahash = { version = "0.8.3", default-features = false }
-
 
 [dev-dependencies]
 criterion = "0.4"
@@ -34,3 +42,6 @@ string_cache = "0.8"
 [[bench]]
 name = "creation"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
