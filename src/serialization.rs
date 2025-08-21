@@ -4,7 +4,7 @@ use serde::{
     ser::{Serialize, SerializeSeq, Serializer},
 };
 
-impl Serialize for Bins {
+impl<N: StringCacheNs> Serialize for Bins<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -62,16 +62,21 @@ impl<'de> Deserialize<'de> for DeserializedCache {
     }
 }
 
-pub struct UstrVisitor {}
-impl UstrVisitor {
+pub struct UstrVisitor<N: StringCacheNs> {
+    __phantom: PhantomData<N>,
+}
+
+impl<N: StringCacheNs> UstrVisitor<N> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        UstrVisitor {}
+        UstrVisitor {
+            __phantom: Default::default(),
+        }
     }
 }
 
-impl<'de> Visitor<'de> for UstrVisitor {
-    type Value = Ustr;
+impl<'de, N: StringCacheNs> Visitor<'de> for UstrVisitor<N> {
+    type Value = Ustr<N>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a &str")
@@ -85,8 +90,8 @@ impl<'de> Visitor<'de> for UstrVisitor {
     }
 }
 
-impl<'de> Deserialize<'de> for Ustr {
-    fn deserialize<D>(deserializer: D) -> Result<Ustr, D::Error>
+impl<'de, N: StringCacheNs> Deserialize<'de> for Ustr<N> {
+    fn deserialize<D>(deserializer: D) -> Result<Ustr<N>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -94,7 +99,7 @@ impl<'de> Deserialize<'de> for Ustr {
     }
 }
 
-impl Serialize for Ustr {
+impl<N: StringCacheNs> Serialize for Ustr<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

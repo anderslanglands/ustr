@@ -1,3 +1,5 @@
+use crate::Dataless;
+
 use super::Ustr;
 use byteorder::{ByteOrder, NativeEndian};
 use std::{
@@ -7,11 +9,13 @@ use std::{
 
 /// A standard `HashMap` using `Ustr` as the key type with a custom `Hasher`
 /// that just uses the precomputed hash for speed instead of calculating it.
-pub type UstrMap<V> = HashMap<Ustr, V, BuildHasherDefault<IdentityHasher>>;
+pub type UstrMap<V, N = Dataless> =
+    HashMap<Ustr<N>, V, BuildHasherDefault<IdentityHasher>>;
 
 /// A standard `HashSet` using `Ustr` as the key type with a custom `Hasher`
 /// that just uses the precomputed hash for speed instead of calculating it.
-pub type UstrSet = HashSet<Ustr, BuildHasherDefault<IdentityHasher>>;
+pub type UstrSet<N = Dataless> =
+    HashSet<Ustr<N>, BuildHasherDefault<IdentityHasher>>;
 
 /// The worst hasher in the world -- the identity hasher.
 #[doc(hidden)]

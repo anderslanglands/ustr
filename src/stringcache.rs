@@ -1,4 +1,101 @@
+use std::marker::PhantomData;
+
+use crate::Bins;
+
 use super::bumpalloc::LeakyBumpAlloc;
+
+// TODO: Should this be here, in stringcache.rs? The NS refactor makes the file
+// hierachy all wonky; may need to mov it around.
+//
+// TODO: May not need the extra clear cache in the example, since it's
+// already unique to this test.
+/// Defines a new namespace of `Ustr`s.
+///
+/// Only needed if you want to derive data per-`Ustr` or want separate
+/// namespaces other than [`Dataless`]. A `Ustr` made in one namespace is not
+/// comparable/otherwise interchangeable with a `Ustr` made in another.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::LazyLock;
+/// use ustr::{Bins, StringCacheNs, Ustr};
+/// # unsafe { ustr::_clear_cache::<TestNs>() };
+///
+/// // Defines a cache that stores the last character as its data.
+/// static TEST_NS: LazyLock<Bins<TestNs>> = LazyLock::new(|| Bins::new());
+/// struct TestNs;
+/// impl StringCacheNs for TestNs {
+///     type Data = char;
+///
+///     fn derive_cache_data(string: &str) -> Self::Data {
+///         string.chars().last().unwrap()
+///     }
+///
+///     fn cache() -> &'static Bins<Self> {
+///         &TEST_NS
+///     }
+/// }
+///
+/// let u = Ustr::<TestNs>::from("foo");
+/// assert_eq!(*u.as_data(), 'o');
+/// ```
+pub trait StringCacheNs: Sized + 'static {
+    type Data: 'static + Clone + Send + Sync + Sized;
+    fn derive_cache_data(string: &str) -> Self::Data;
+
+    /// Utility function to get a reference to the main cache object.
+    /// Externally to the crate, only for use with serialization.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ustr::{Ustr, ustr, ustr as u, Dataless, StringCacheNs};
+    /// # #[cfg(feature="serde")]
+    /// # {
+    /// # unsafe { ustr::_clear_cache::<Dataless>() };
+    /// ustr("Send me to JSON and back");
+    /// let json = serde_json::to_string(Dataless::cache()).unwrap();
+    /// # }
+    fn cache() -> &'static Bins<Self>;
+
+    /// Returns the number of unique strings in the cache.
+    ///
+    /// This may be an underestimate if other threads are writing to the cache
+    /// concurrently.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ustr::ustr as u;
+    ///
+    /// let _ = u("Hello");
+    /// let _ = u(", World!");
+    /// assert_eq!(ustr::num_entries(), 2);
+    /// ```
+    fn num_entries() -> usize {
+        Self::cache()
+            .0
+            .iter()
+            .map(|sc| {
+                let t = sc.lock().num_entries();
+                t
+            })
+            .sum()
+    }
+
+    #[doc(hidden)]
+    fn num_entries_per_bin() -> Vec<usize> {
+        Self::cache()
+            .0
+            .iter()
+            .map(|sc| {
+                let t = sc.lock().num_entries();
+                t
+            })
+            .collect::<Vec<_>>()
+    }
+}
 
 // `StringCache` stores a `Vec` of pointers to the `StringCacheEntry` structs.
 // The actual memory for the `StringCacheEntry` is stored in the LeakyBumpAlloc,
@@ -29,10 +126,10 @@ use super::bumpalloc::LeakyBumpAlloc;
 // divided evenly among a number of 'bins' or shards each with their own lock,
 // in order to reduce contention.
 #[repr(align(128))]
-pub(crate) struct StringCache {
+pub(crate) struct StringCache<N: StringCacheNs> {
     pub(crate) alloc: LeakyBumpAlloc,
     pub(crate) old_allocs: Vec<LeakyBumpAlloc>,
-    entries: Vec<*mut StringCacheEntry>,
+    entries: Vec<*mut StringCacheEntry<N>>,
     num_entries: usize,
     mask: usize,
     total_allocated: usize,
@@ -54,13 +151,13 @@ pub(crate) const NUM_BINS: usize = 1 << BIN_SHIFT;
 pub(crate) const TOP_SHIFT: usize =
     8 * std::mem::size_of::<usize>() - BIN_SHIFT;
 
-impl StringCache {
+impl<N: StringCacheNs> StringCache<N> {
     /// Create a new StringCache with the given starting capacity
-    pub fn new() -> StringCache {
+    pub fn new() -> StringCache<N> {
         let capacity = INITIAL_CAPACITY / NUM_BINS;
         let alloc = LeakyBumpAlloc::new(
             INITIAL_ALLOC / NUM_BINS,
-            std::mem::align_of::<StringCacheEntry>(),
+            std::mem::align_of::<StringCacheEntry<N>>(),
         );
         StringCache {
             // Current allocator.
@@ -174,7 +271,7 @@ impl StringCache {
         // we'll be using 128-bit pointers and we'll need to rewrite this
         // crate anyway.
         let byte_len = string.len() + 1;
-        let alloc_size = std::mem::size_of::<StringCacheEntry>() + byte_len;
+        let alloc_size = std::mem::size_of::<StringCacheEntry<N>>() + byte_len;
 
         // if our new allocation would spill over the allocator, make a new
         // allocator and let the old one leak
@@ -193,7 +290,7 @@ impl StringCache {
                 &mut self.alloc,
                 LeakyBumpAlloc::new(
                     new_capacity,
-                    std::mem::align_of::<StringCacheEntry>(),
+                    std::mem::align_of::<StringCacheEntry<N>>(),
                 ),
             );
             self.old_allocs.push(old_alloc);
@@ -208,7 +305,7 @@ impl StringCache {
         //    returned by allocate() is prooperly aligned.
         unsafe {
             *entry_ptr =
-                self.alloc.allocate(alloc_size) as *mut StringCacheEntry;
+                self.alloc.allocate(alloc_size) as *mut StringCacheEntry<N>;
 
             // Write the header.
             // `entry_ptr` is guaranteed to point to a valid `StringCacheEntry`,
@@ -216,6 +313,7 @@ impl StringCache {
             std::ptr::write(
                 *entry_ptr,
                 StringCacheEntry {
+                    data: N::derive_cache_data(string),
                     hash,
                     len: string.len(),
                 },
@@ -251,7 +349,7 @@ impl StringCache {
     pub(crate) unsafe fn grow(&mut self) {
         let new_mask = self.mask * 2 + 1;
 
-        let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
+        let mut new_entries: std::vec::Vec<*mut StringCacheEntry<N>> =
             vec![std::ptr::null_mut(); new_mask + 1];
 
         // copy the existing map into the new map
@@ -303,7 +401,7 @@ impl StringCache {
         self.alloc.clear();
         self.alloc = LeakyBumpAlloc::new(
             INITIAL_ALLOC / NUM_BINS,
-            std::mem::align_of::<StringCacheEntry>(),
+            std::mem::align_of::<StringCacheEntry<N>>(),
         );
     }
 
@@ -322,20 +420,21 @@ impl StringCache {
     }
 }
 
-impl Default for StringCache {
-    fn default() -> StringCache {
+impl<N: StringCacheNs> Default for StringCache<N> {
+    fn default() -> StringCache<N> {
         StringCache::new()
     }
 }
 
 // We are safe to be `Send` but not `Sync` (we get Sync by wrapping in a mutex).
-unsafe impl Send for StringCache {}
+unsafe impl<N: StringCacheNs> Send for StringCache<N> {}
 
 #[doc(hidden)]
-pub struct StringCacheIterator {
+pub struct StringCacheIterator<N: StringCacheNs> {
     pub(crate) allocs: Vec<(*const u8, *const u8)>,
     pub(crate) current_alloc: usize,
     pub(crate) current_ptr: *const u8,
+    pub(crate) __phantom: PhantomData<N>,
 }
 
 fn round_up_to(n: usize, align: usize) -> usize {
@@ -343,7 +442,7 @@ fn round_up_to(n: usize, align: usize) -> usize {
     (n.checked_add(align).expect("round_up_to overflowed") - 1) & !(align - 1)
 }
 
-impl Iterator for StringCacheIterator {
+impl<N: StringCacheNs> Iterator for StringCacheIterator<N> {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
         // check that the cache is not empty before accessing
@@ -368,7 +467,7 @@ impl Iterator for StringCacheIterator {
         // Cast the current ptr to a `StringCacheEntry` and create the next
         // string from it.
         unsafe {
-            let sce = &*(self.current_ptr as *const StringCacheEntry);
+            let sce = &*(self.current_ptr as *const StringCacheEntry<N>);
             // The next entry will be the size of the number of bytes in the
             // string, +1 for the null byte, rounded up to the alignment (8).
             self.current_ptr = sce.next_entry();
@@ -385,17 +484,18 @@ impl Iterator for StringCacheIterator {
 
 #[repr(C)]
 #[derive(Clone)]
-pub(crate) struct StringCacheEntry {
+pub(crate) struct StringCacheEntry<N: StringCacheNs> {
+    pub(crate) data: N::Data,
     pub(crate) hash: u64,
     pub(crate) len: usize,
 }
 
-impl StringCacheEntry {
+impl<N: StringCacheNs> StringCacheEntry<N> {
     // Get the pointer to the characters.
     pub(crate) fn char_ptr(&self) -> *const u8 {
         // We know the chars are always directly after this struct in memory
         // because that's the way they're laid out on initialization.
-        unsafe { (self as *const StringCacheEntry).add(1) as *const u8 }
+        unsafe { (self as *const StringCacheEntry<N>).add(1) as *const u8 }
     }
 
     // Calcualte the address of the next entry in the cache. This is a utility
@@ -404,7 +504,7 @@ impl StringCacheEntry {
         #[allow(clippy::ptr_offset_with_cast)]
         self.char_ptr().add(round_up_to(
             self.len + 1,
-            std::mem::align_of::<StringCacheEntry>(),
+            std::mem::align_of::<StringCacheEntry<N>>(),
         ))
     }
 }
