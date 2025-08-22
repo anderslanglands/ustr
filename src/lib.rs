@@ -694,27 +694,12 @@ pub unsafe fn _clear_cache<N: StringCacheNs>() {
 /// Returns the total amount of memory allocated and in use by the cache in
 /// bytes.
 pub fn total_allocated() -> usize {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().total_allocated();
-
-            t
-        })
-        .sum()
+    Dataless::total_allocated()
 }
 
 /// Returns the total amount of memory reserved by the cache in bytes.
 pub fn total_capacity() -> usize {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().total_capacity();
-            t
-        })
-        .sum()
+    Dataless::total_capacity()
 }
 
 /// Create a new dataless `Ustr` from the given `str`.
@@ -785,31 +770,7 @@ pub fn num_entries_per_bin() -> Vec<usize> {
 /// destroy the strings, they remain valid, meaning it's safe to iterate over
 /// them, the list just might not be completely up to date.
 pub fn string_cache_iter() -> StringCacheIterator<Dataless> {
-    let mut allocs = Vec::new();
-    for m in STRING_CACHE.0.iter() {
-        let sc = m.lock();
-        // the start of the allocator's data is actually the ptr, start() just
-        // points to the beginning of the allocated region. The first bytes will
-        // be uninitialized since we're bumping down
-        for a in &sc.old_allocs {
-            allocs.push((a.ptr(), a.end()));
-        }
-        let ptr = sc.alloc.ptr();
-        let end = sc.alloc.end();
-        if ptr != end {
-            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
-        }
-    }
-
-    let current_ptr =
-        allocs.first().map(|s| s.0).unwrap_or_else(std::ptr::null);
-
-    StringCacheIterator {
-        allocs,
-        current_alloc: 0,
-        current_ptr,
-        __phantom: Default::default(),
-    }
+    Dataless::string_cache_iter()
 }
 
 /// The type used for the global string cache.

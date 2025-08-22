@@ -97,6 +97,72 @@ pub trait StringCacheNs: Sized + 'static {
             .collect::<Vec<_>>()
     }
 
+    /// Returns the total amount of memory allocated and in use by the cache in
+    /// bytes.
+    fn total_allocated() -> usize {
+        Self::cache()
+            .0
+            .iter()
+            .map(|sc| {
+                let t = sc.lock().total_allocated();
+
+                t
+            })
+            .sum()
+    }
+
+    /// Returns the total amount of memory reserved by the cache in bytes.
+    fn total_capacity() -> usize {
+        Self::cache()
+            .0
+            .iter()
+            .map(|sc| {
+                let t = sc.lock().total_capacity();
+                t
+            })
+            .sum()
+    }
+    /// Return an iterator over the entire string cache.
+    ///
+    /// If another thread is adding strings concurrently to this call then they
+    /// might not show up in the view of the cache presented by this iterator.
+    ///
+    /// # Safety
+    ///
+    /// This returns an iterator to the state of the cache at the time when
+    /// `string_cache_iter()` was called. It is of course possible that another
+    /// thread will add more strings to the cache after this, but since we never
+    /// destroy the strings, they remain valid, meaning it's safe to iterate
+    /// over them, the list just might not be completely up to date.
+    fn string_cache_iter() -> StringCacheIterator<Self> {
+        let mut allocs = Vec::new();
+        for m in Self::cache().0.iter() {
+            let sc = m.lock();
+            // the start of the allocator's data is actually the ptr, start()
+            // just points to the beginning of the allocated region.
+            // The first bytes will be uninitialized since we're
+            // bumping down
+            for a in &sc.old_allocs {
+                allocs.push((a.ptr(), a.end()));
+            }
+            let ptr = sc.alloc.ptr();
+            let end = sc.alloc.end();
+            if ptr != end {
+                allocs.push((sc.alloc.ptr(), sc.alloc.end()));
+            }
+        }
+
+        let current_ptr =
+            allocs.first().map(|s| s.0).unwrap_or_else(std::ptr::null);
+
+        StringCacheIterator {
+            allocs,
+            current_alloc: 0,
+            current_ptr,
+            __phantom: Default::default(),
+        }
+    }
+
     /// DO NOT CALL THIS.
     ///
     /// Clears the cache -- used for benchmarking and testing purposes to clear
