@@ -25,9 +25,9 @@
 //! # Usage
 //!
 //! ```
-//! use ustr::{Ustr, ustr, ustr as u};
+//! use ustr::{Ustr, ustr, ustr as u, Dataless};
 //!
-//! # unsafe { ustr::_clear_cache() };
+//! # unsafe { ustr::_clear_cache::<Dataless>() };
 //! // Creation is quick and easy using either `Ustr::from` or the ustr function
 //! // and only one copy of any string is stored.
 //! let u1 = Ustr::from("the quick brown fox");
@@ -63,7 +63,7 @@
 //!
 //! ```
 //! # #[cfg(feature = "serde")] {
-//! use ustr::{Ustr, ustr};
+//! use ustr::{Ustr, ustr, Dataless};
 //! let u_ser = ustr("serde");
 //! let json = serde_json::to_string(&u_ser).unwrap();
 //! let u_de : Ustr = serde_json::from_str(&json).unwrap();
@@ -164,13 +164,14 @@ use std::{
     ffi::{CStr, OsStr},
     fmt,
     hash::{Hash, Hasher},
+    marker::PhantomData,
     ops::Deref,
     os::raw::c_char,
     path::Path,
     ptr::NonNull,
     rc::Rc,
-    slice, str,
-    str::FromStr,
+    slice,
+    str::{self, FromStr},
     sync::Arc,
 };
 
@@ -185,22 +186,47 @@ pub mod serialization;
 #[cfg(feature = "serde")]
 pub use serialization::DeserializedCache;
 
-/// A handle representing a string in the global string cache.
+/// A generic handle representing a string in any global string cache.
+///
+/// You can freely copy, destroy or send these to other threads: the underlying
+/// string is always valid in memory (and is never destroyed).
+///
+/// In the basic case of wanting a single global string cache, use [`Ustr`], as
+/// in [`Ustr::from`] or [`ustr`].
+///
+/// If you desire multiple distinct namespaces or associated data, create a new
+/// [`StringCacheNs`] and create your own typedef for `InternedString<MyNs>`.
+#[repr(transparent)]
+pub struct InternedString<N: StringCacheNs = Dataless> {
+    char_ptr: NonNull<u8>,
+    __phantom: PhantomData<N>,
+}
+
+/// A handle representing a string in the [`Dataless`] global string cache.
 ///
 /// To use, create one using [`Ustr::from`] or the [`ustr`] function. You can
 /// freely copy, destroy or send `Ustr`s to other threads: the underlying string
 /// is always valid in memory (and is never destroyed).
-#[derive(Copy, Clone, PartialEq)]
-#[repr(transparent)]
-pub struct Ustr {
-    char_ptr: NonNull<u8>,
+pub type Ustr = InternedString<Dataless>;
+
+impl<N: StringCacheNs> Clone for InternedString<N> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<N: StringCacheNs> Copy for InternedString<N> {}
+
+impl<N: StringCacheNs> PartialEq for InternedString<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.char_ptr.eq(&other.char_ptr)
+    }
 }
 
 /// Defer to `str` for equality.
 ///
 /// Lexicographic ordering will be slower than pointer comparison, but much less
-/// surprising if you use `Ustr`s as keys in e.g. a `BTreeMap`.
-impl Ord for Ustr {
+/// surprising if you use `InternedString`s as keys in e.g. a `BTreeMap`.
+impl<N: StringCacheNs> Ord for InternedString<N> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_str().cmp(other.as_str())
     }
@@ -209,54 +235,61 @@ impl Ord for Ustr {
 /// Defer to `str` for equality.
 ///
 /// Lexicographic ordering will be slower thanpointer comparison, but much less
-/// surprising if you use `Ustr`s as keys in e.g. a `BTreeMap`.
+/// surprising if you use `InternedString`s as keys in e.g. a `BTreeMap`.
 #[allow(clippy::non_canonical_partial_ord_impl)]
-impl PartialOrd for Ustr {
+impl<N: StringCacheNs> PartialOrd for InternedString<N> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ustr {
-    /// Create a new `Ustr` from the given `str`.
+impl<N: StringCacheNs> InternedString<N> {
+    /// Create a new `Ustr`/`InternedString` from the given `str`.
     ///
-    /// You can also use the [`ustr`] function.
+    /// Derives new `StringCacheNs::Data` if `str` was not already in the cache.
+    ///
+    /// You can also use the [`ustr`] function, if you are using [`Dataless`]
     ///
     /// # Examples
     ///
     /// ```
     /// use ustr::{Ustr, ustr as u};
-    /// # unsafe { ustr::_clear_cache() };
+    /// # unsafe { ustr::_clear_cache::<ustr::Dataless>() };
     ///
     /// let u1 = Ustr::from("the quick brown fox");
     /// let u2 = u("the quick brown fox");
     /// assert_eq!(u1, u2);
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
-    pub fn from(string: &str) -> Ustr {
+    pub fn from(string: &str) -> InternedString<N> {
         let hash = {
             let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
-        let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
-        Ustr {
+        let mut sc = N::cache().0[whichbin(hash)].lock();
+        InternedString {
             // SAFETY: sc.insert does not give back a null pointer
             char_ptr: unsafe {
                 NonNull::new_unchecked(sc.insert(string, hash) as *mut _)
             },
+            __phantom: Default::default(),
         }
     }
 
-    pub fn from_existing(string: &str) -> Option<Ustr> {
+    /// Create a new `Ustr` for the given `str`, but only if it already exists.
+    ///
+    /// Never derives new `StringCacheNs::Data`.
+    pub fn from_existing(string: &str) -> Option<InternedString<N>> {
         let hash = {
             let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
-        let sc = STRING_CACHE.0[whichbin(hash)].lock();
-        sc.get_existing(string, hash).map(|ptr| Ustr {
+        let sc = N::cache().0[whichbin(hash)].lock();
+        sc.get_existing(string, hash).map(|ptr| InternedString {
             char_ptr: unsafe { NonNull::new_unchecked(ptr as *mut _) },
+            __phantom: Default::default(),
         })
     }
 
@@ -266,7 +299,8 @@ impl Ustr {
     ///
     /// ```
     /// use ustr::ustr as u;
-    /// # unsafe { ustr::_clear_cache() };
+    /// use ustr::Dataless;
+    /// # unsafe { ustr::_clear_cache::<Dataless>() };
     ///
     /// let u_fox = u("the quick brown fox");
     /// let words: Vec<&str> = u_fox.as_str().split_whitespace().collect();
@@ -278,7 +312,7 @@ impl Ustr {
         // 2) len is a usize stored usize aligned usize bytes before char_ptr
         // 3) char_ptr points to a valid UTF-8 string of len bytes.
         // All these are guaranteed by StringCache::insert() and by the fact
-        // we can only construct a Ustr from a valid &str.
+        // we can only construct a InternedString from a valid &str.
         unsafe {
             str::from_utf8_unchecked(slice::from_raw_parts(
                 self.char_ptr.as_ptr(),
@@ -295,7 +329,8 @@ impl Ustr {
     ///
     /// ```
     /// use ustr::ustr as u;
-    /// # unsafe { ustr::_clear_cache() };
+    /// use ustr::Dataless;
+    /// # unsafe { ustr::_clear_cache::<Dataless>() };
     ///
     /// let u_fox = u("the quick brown fox");
     /// let len = unsafe {
@@ -334,12 +369,26 @@ impl Ustr {
         }
     }
 
+    /// Get a reference to this `Ustr`'s associated data.
+    pub fn as_data(&self) -> &'static N::Data {
+        // SAFETY: Unsafe here is only used to force the lifetime to be static.
+        // We already know the entry (from its string) will live forever,
+        // meaning the data will, as well.
+        unsafe {
+            std::mem::transmute::<&N::Data, &'static N::Data>(
+                &self.as_string_cache_entry().data,
+            )
+        }
+    }
+
     /// Get a raw pointer to the `StringCacheEntry`.
     #[inline]
-    fn as_string_cache_entry(&self) -> &StringCacheEntry {
+    fn as_string_cache_entry(&self) -> &StringCacheEntry<N> {
         // The allocator guarantees that the alignment is correct and that
         // this pointer is non-null
-        unsafe { &*(self.char_ptr.as_ptr().cast::<StringCacheEntry>().sub(1)) }
+        unsafe {
+            &*(self.char_ptr.as_ptr().cast::<StringCacheEntry<N>>().sub(1))
+        }
     }
 
     /// Get the length (in bytes) of this string.
@@ -368,138 +417,138 @@ impl Ustr {
 // We're safe to impl these because the strings they reference are immutable
 // and for all intents and purposes 'static since they're never deleted after
 // being created
-unsafe impl Send for Ustr {}
-unsafe impl Sync for Ustr {}
+unsafe impl<N: StringCacheNs> Send for InternedString<N> {}
+unsafe impl<N: StringCacheNs> Sync for InternedString<N> {}
 
-impl PartialEq<str> for Ustr {
+impl<N: StringCacheNs> PartialEq<str> for InternedString<N> {
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
     }
 }
 
-impl PartialEq<Ustr> for str {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == u.as_str()
     }
 }
 
-impl PartialEq<&str> for Ustr {
+impl<N: StringCacheNs> PartialEq<&str> for InternedString<N> {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
     }
 }
 
-impl PartialEq<Ustr> for &str {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == u.as_str()
     }
 }
 
-impl PartialEq<&&str> for Ustr {
+impl<N: StringCacheNs> PartialEq<&&str> for InternedString<N> {
     fn eq(&self, other: &&&str) -> bool {
         self.as_str() == **other
     }
 }
 
-impl PartialEq<Ustr> for &&str {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &&str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         **self == u.as_str()
     }
 }
 
-impl PartialEq<String> for Ustr {
+impl<N: StringCacheNs> PartialEq<String> for InternedString<N> {
     fn eq(&self, other: &String) -> bool {
         self.as_str() == other
     }
 }
 
-impl PartialEq<Ustr> for String {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for String {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == u.as_str()
     }
 }
 
-impl PartialEq<&String> for Ustr {
+impl<N: StringCacheNs> PartialEq<&String> for InternedString<N> {
     fn eq(&self, other: &&String) -> bool {
         self.as_str() == *other
     }
 }
 
-impl PartialEq<Ustr> for &String {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &String {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == u.as_str()
     }
 }
 
-impl PartialEq<Box<str>> for Ustr {
+impl<N: StringCacheNs> PartialEq<Box<str>> for InternedString<N> {
     fn eq(&self, other: &Box<str>) -> bool {
         self.as_str() == &**other
     }
 }
 
-impl PartialEq<Ustr> for Box<str> {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Box<str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &**self == u.as_str()
     }
 }
 
-impl PartialEq<Ustr> for &Box<str> {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Box<str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &***self == u.as_str()
     }
 }
 
-impl PartialEq<Cow<'_, str>> for Ustr {
+impl<N: StringCacheNs> PartialEq<Cow<'_, str>> for InternedString<N> {
     fn eq(&self, other: &Cow<'_, str>) -> bool {
         self.as_str() == &*other
     }
 }
 
-impl PartialEq<Ustr> for Cow<'_, str> {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Cow<'_, str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &*self == u.as_str()
     }
 }
 
-impl PartialEq<&Cow<'_, str>> for Ustr {
+impl<N: StringCacheNs> PartialEq<&Cow<'_, str>> for InternedString<N> {
     fn eq(&self, other: &&Cow<'_, str>) -> bool {
         self.as_str() == &**other
     }
 }
 
-impl PartialEq<Ustr> for &Cow<'_, str> {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Cow<'_, str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &**self == u.as_str()
     }
 }
 
-impl PartialEq<Ustr> for Path {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Path {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == Path::new(u)
     }
 }
 
-impl PartialEq<Ustr> for &Path {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Path {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == Path::new(u)
     }
 }
 
-impl PartialEq<Ustr> for OsStr {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for OsStr {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == OsStr::new(u)
     }
 }
 
-impl PartialEq<Ustr> for &OsStr {
-    fn eq(&self, u: &Ustr) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &OsStr {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == OsStr::new(u)
     }
 }
 
-impl Eq for Ustr {}
+impl<N: StringCacheNs> Eq for InternedString<N> {}
 
-impl<T: ?Sized> AsRef<T> for Ustr
+impl<T: ?Sized, N: StringCacheNs> AsRef<T> for InternedString<N>
 where
     str: AsRef<T>,
 {
@@ -508,113 +557,113 @@ where
     }
 }
 
-impl FromStr for Ustr {
+impl<N: StringCacheNs> FromStr for InternedString<N> {
     type Err = std::string::ParseError;
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Ustr::from(s))
+        Ok(InternedString::from(s))
     }
 }
 
-impl From<&str> for Ustr {
-    fn from(s: &str) -> Ustr {
-        Ustr::from(s)
+impl<N: StringCacheNs> From<&str> for InternedString<N> {
+    fn from(s: &str) -> InternedString<N> {
+        InternedString::from(s)
     }
 }
 
-impl From<Ustr> for &'static str {
-    fn from(s: Ustr) -> &'static str {
+impl<N: StringCacheNs> From<InternedString<N>> for &'static str {
+    fn from(s: InternedString<N>) -> &'static str {
         s.as_str()
     }
 }
 
-impl From<Ustr> for String {
-    fn from(u: Ustr) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for String {
+    fn from(u: InternedString<N>) -> Self {
         String::from(u.as_str())
     }
 }
 
-impl From<Ustr> for Box<str> {
-    fn from(u: Ustr) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Box<str> {
+    fn from(u: InternedString<N>) -> Self {
         Box::from(u.as_str())
     }
 }
 
-impl From<Ustr> for Rc<str> {
-    fn from(u: Ustr) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Rc<str> {
+    fn from(u: InternedString<N>) -> Self {
         Rc::from(u.as_str())
     }
 }
 
-impl From<Ustr> for Arc<str> {
-    fn from(u: Ustr) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Arc<str> {
+    fn from(u: InternedString<N>) -> Self {
         Arc::from(u.as_str())
     }
 }
 
-impl From<Ustr> for Cow<'static, str> {
-    fn from(u: Ustr) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Cow<'static, str> {
+    fn from(u: InternedString<N>) -> Self {
         Cow::Borrowed(u.as_str())
     }
 }
 
-impl From<String> for Ustr {
-    fn from(s: String) -> Ustr {
-        Ustr::from(&s)
+impl<N: StringCacheNs> From<String> for InternedString<N> {
+    fn from(s: String) -> InternedString<N> {
+        InternedString::from(&s)
     }
 }
 
-impl From<&String> for Ustr {
-    fn from(s: &String) -> Ustr {
-        Ustr::from(&**s)
+impl<N: StringCacheNs> From<&String> for InternedString<N> {
+    fn from(s: &String) -> InternedString<N> {
+        InternedString::from(&**s)
     }
 }
 
-impl From<Box<str>> for Ustr {
-    fn from(s: Box<str>) -> Ustr {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Box<str>> for InternedString<N> {
+    fn from(s: Box<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl From<Rc<str>> for Ustr {
-    fn from(s: Rc<str>) -> Ustr {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Rc<str>> for InternedString<N> {
+    fn from(s: Rc<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl From<Arc<str>> for Ustr {
-    fn from(s: Arc<str>) -> Ustr {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Arc<str>> for InternedString<N> {
+    fn from(s: Arc<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl From<Cow<'_, str>> for Ustr {
-    fn from(s: Cow<'_, str>) -> Ustr {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Cow<'_, str>> for InternedString<N> {
+    fn from(s: Cow<'_, str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl Default for Ustr {
+impl<N: StringCacheNs> Default for InternedString<N> {
     fn default() -> Self {
-        Ustr::from("")
+        InternedString::from("")
     }
 }
 
-impl Deref for Ustr {
+impl<N: StringCacheNs> Deref for InternedString<N> {
     type Target = str;
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
 }
 
-impl fmt::Display for Ustr {
+impl<N: StringCacheNs> fmt::Display for InternedString<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl fmt::Debug for Ustr {
+impl<N: StringCacheNs> fmt::Debug for InternedString<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "u!({:?})", self.as_str())
     }
@@ -622,7 +671,7 @@ impl fmt::Debug for Ustr {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
-impl Hash for Ustr {
+impl<N: StringCacheNs> Hash for InternedString<N> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
     }
@@ -638,45 +687,29 @@ impl Hash for Ustr {
 ///
 /// DO NOT CALL THIS.
 #[doc(hidden)]
-pub unsafe fn _clear_cache() {
-    for m in STRING_CACHE.0.iter() {
-        m.lock().clear();
-    }
+pub unsafe fn _clear_cache<N: StringCacheNs>() {
+    N::_clear_cache();
 }
 
 /// Returns the total amount of memory allocated and in use by the cache in
 /// bytes.
 pub fn total_allocated() -> usize {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().total_allocated();
-
-            t
-        })
-        .sum()
+    Dataless::total_allocated()
 }
 
 /// Returns the total amount of memory reserved by the cache in bytes.
 pub fn total_capacity() -> usize {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().total_capacity();
-            t
-        })
-        .sum()
+    Dataless::total_capacity()
 }
 
-/// Create a new `Ustr` from the given `str`.
+/// Create a new dataless `Ustr` from the given `str`.
 ///
 /// # Examples
 ///
 /// ```
 /// use ustr::ustr;
-/// # unsafe { ustr::_clear_cache() };
+/// use ustr::Dataless;
+/// # unsafe { ustr::_clear_cache::<Dataless>() };
 ///
 /// let u1 = ustr("the quick brown fox");
 /// let u2 = ustr("the quick brown fox");
@@ -688,14 +721,15 @@ pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
 
-/// Create a new `Ustr` from the given `str` but only if it already exists in
-/// the string cache.
+/// Create a new [`Dataless`] `Ustr` from the given `str` but only if it already
+/// exists in the string cache.
 ///
 /// # Examples
 ///
 /// ```
 /// use ustr::{ustr, existing_ustr};
-/// # unsafe { ustr::_clear_cache() };
+/// use ustr::Dataless;
+/// # unsafe { ustr::_clear_cache::<Dataless>() };
 ///
 /// let u1 = existing_ustr("the quick brown fox");
 /// let u2 = ustr("the quick brown fox");
@@ -708,58 +742,19 @@ pub fn existing_ustr(s: &str) -> Option<Ustr> {
     Ustr::from_existing(s)
 }
 
-/// Utility function to get a reference to the main cache object for use with
-/// serialization.
-///
-/// # Examples
-///
-/// ```
-/// # use ustr::{Ustr, ustr, ustr as u};
-/// # #[cfg(feature="serde")]
-/// # {
-/// # unsafe { ustr::_clear_cache() };
-/// ustr("Send me to JSON and back");
-/// let json = serde_json::to_string(ustr::cache()).unwrap();
-/// # }
-pub fn cache() -> &'static Bins {
-    &STRING_CACHE
+/// See [`StringCacheNs::cache`] for the [`Dataless`] namespace.
+pub fn cache() -> &'static Bins<Dataless> {
+    Dataless::cache()
 }
 
-/// Returns the number of unique strings in the cache.
-///
-/// This may be an underestimate if other threads are writing to the cache
-/// concurrently.
-///
-/// # Examples
-///
-/// ```
-/// use ustr::ustr as u;
-///
-/// let _ = u("Hello");
-/// let _ = u(", World!");
-/// assert_eq!(ustr::num_entries(), 2);
-/// ```
+/// See [`StringCacheNs::num_entries`] for the [`Dataless`] namespace.
 pub fn num_entries() -> usize {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().num_entries();
-            t
-        })
-        .sum()
+    Dataless::num_entries()
 }
 
 #[doc(hidden)]
 pub fn num_entries_per_bin() -> Vec<usize> {
-    STRING_CACHE
-        .0
-        .iter()
-        .map(|sc| {
-            let t = sc.lock().num_entries();
-            t
-        })
-        .collect::<Vec<_>>()
+    Dataless::num_entries_per_bin()
 }
 
 /// Return an iterator over the entire string cache.
@@ -774,31 +769,8 @@ pub fn num_entries_per_bin() -> Vec<usize> {
 /// thread will add more strings to the cache after this, but since we never
 /// destroy the strings, they remain valid, meaning it's safe to iterate over
 /// them, the list just might not be completely up to date.
-pub fn string_cache_iter() -> StringCacheIterator {
-    let mut allocs = Vec::new();
-    for m in STRING_CACHE.0.iter() {
-        let sc = m.lock();
-        // the start of the allocator's data is actually the ptr, start() just
-        // points to the beginning of the allocated region. The first bytes will
-        // be uninitialized since we're bumping down
-        for a in &sc.old_allocs {
-            allocs.push((a.ptr(), a.end()));
-        }
-        let ptr = sc.alloc.ptr();
-        let end = sc.alloc.end();
-        if ptr != end {
-            allocs.push((sc.alloc.ptr(), sc.alloc.end()));
-        }
-    }
-
-    let current_ptr =
-        allocs.first().map(|s| s.0).unwrap_or_else(std::ptr::null);
-
-    StringCacheIterator {
-        allocs,
-        current_alloc: 0,
-        current_ptr,
-    }
+pub fn string_cache_iter() -> StringCacheIterator<Dataless> {
+    Dataless::string_cache_iter()
 }
 
 /// The type used for the global string cache.
@@ -806,7 +778,42 @@ pub fn string_cache_iter() -> StringCacheIterator {
 /// This is exposed to allow e.g. serialization of the data returned by the
 /// [`cache()`] function.
 #[repr(transparent)]
-pub struct Bins(pub(crate) [Mutex<StringCache>; NUM_BINS]);
+pub struct Bins<N: StringCacheNs>(pub(crate) [Mutex<StringCache<N>>; NUM_BINS]);
+
+impl<N: StringCacheNs> Bins<N> {
+    pub fn new() -> Self {
+        use std::mem::{self, MaybeUninit};
+        // This deeply unsafe feeling dance allows us to initialize an array of
+        // arbitrary size and will have to tide us over until const generics
+        // land. See:
+        // https://doc.rust-lang.org/beta/std/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
+
+        // Create an uninitialized array of `MaybeUninit`. The `assume_init` is
+        // safe because the type we are claiming to have initialized here is a
+        // bunch of `MaybeUninit`s, which do not require initialization.
+        let mut bins: [MaybeUninit<Mutex<StringCache<Dataless>>>; NUM_BINS] =
+            unsafe { MaybeUninit::uninit().assume_init() };
+
+        // Dropping a `MaybeUninit` does nothing. Thus using raw pointer
+        // assignment instead of `ptr::write` does not cause the old
+        // uninitialized value to be dropped. Also if there is a panic during
+        // this loop, we have a memory leak, but there is no memory safety
+        // issue.
+        for bin in &mut bins[..] {
+            *bin = MaybeUninit::new(Mutex::new(StringCache::default()));
+        }
+
+        // Everything is initialized. Transmute the array to the
+        // initialized type.
+        unsafe { mem::transmute::<_, Bins<N>>(bins) }
+    }
+}
+
+impl<N: StringCacheNs> Default for Bins<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 lazy_static::lazy_static! {
@@ -815,11 +822,12 @@ lazy_static::lazy_static! {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Bins, Dataless, StringCacheNs};
+
     use super::TEST_LOCK;
-    use lazy_static::lazy_static;
     use std::ffi::OsStr;
     use std::path::Path;
-    use std::sync::Mutex;
+    use std::sync::LazyLock;
 
     #[test]
     fn it_works() {
@@ -838,7 +846,7 @@ mod tests {
         use super::ustr as u;
 
         unsafe {
-            super::_clear_cache();
+            super::_clear_cache::<Dataless>();
         }
 
         let _empty = u("");
@@ -878,7 +886,7 @@ mod tests {
         use std::collections::HashSet;
 
         // clear the cache first or our results will be wrong
-        unsafe { super::_clear_cache() };
+        unsafe { super::_clear_cache::<Dataless>() };
 
         // let path =
         // std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -922,7 +930,7 @@ mod tests {
 
         println!(
             "size of StringCache: {}",
-            std::mem::size_of::<super::StringCache>()
+            std::mem::size_of::<super::StringCache<Dataless>>()
         );
     }
 
@@ -957,7 +965,7 @@ mod tests {
         let s = raft.clone();
         for _ in 0..600 {
             let mut v = Vec::with_capacity(20_000);
-            unsafe { super::_clear_cache() };
+            unsafe { super::_clear_cache::<Dataless>() };
             for s in s.iter().cycle().take(20_000) {
                 v.push(u(s));
             }
@@ -995,7 +1003,8 @@ mod tests {
         use std::collections::HashSet;
 
         // clear the cache first or our results will be wrong
-        unsafe { super::_clear_cache() };
+        // use ustr::Dataless;
+        unsafe { super::_clear_cache::<Dataless>() };
 
         let path = std::path::Path::new(
             &std::env::var("CARGO_MANIFEST_DIR")
@@ -1021,7 +1030,8 @@ mod tests {
 
         let json = serde_json::to_string(super::cache()).unwrap();
         unsafe {
-            super::_clear_cache();
+            use super::Dataless;
+            super::_clear_cache::<Dataless>();
         }
         let _: super::DeserializedCache = serde_json::from_str(&json).unwrap();
 
@@ -1104,7 +1114,7 @@ mod tests {
 
     #[test]
     fn test_empty_cache() {
-        unsafe { super::_clear_cache() };
+        unsafe { super::_clear_cache::<Dataless>() };
         assert_eq!(
             super::string_cache_iter().collect::<Vec<_>>(),
             Vec::<&'static str>::new()
@@ -1137,36 +1147,68 @@ mod tests {
         let boxed: Box<str> = u.into();
         assert_eq!(boxed, u);
     }
+
+    // Defines `TestNs` for use by tests, using the given data type and
+    // expression for deriving it
+    macro_rules! define_cache {
+        ($T:ty, $derive:expr) => {
+            static TEST_CACHE: LazyLock<Bins<TestNs>> =
+                LazyLock::new(|| Bins::new());
+            struct TestNs;
+            impl StringCacheNs for TestNs {
+                type Data = $T;
+
+                fn derive_cache_data(string: &str) -> Self::Data {
+                    $derive(string)
+                }
+
+                fn cache() -> &'static crate::Bins<Self> {
+                    &TEST_CACHE
+                }
+            }
+            type Tstr = super::InternedString<TestNs>;
+        };
+    }
+
+    #[test]
+    fn non_dataless() {
+        define_cache!(char, |s: &str| s.chars().last().unwrap());
+        let strs = ["foo", "bar", "baz"];
+        let syms = strs.map(Tstr::from);
+        let exp_data = ['o', 'r', 'z'];
+        for (s, e) in syms.iter().copied().zip(exp_data) {
+            assert_eq!(*s.as_data(), e);
+        }
+    }
+
+    // Since char is 4 bytes, try something with a stranger size (1) to see if
+    // we can throw off any pointer arithmetic.
+    #[test]
+    fn non_dataless_odd_size() {
+        define_cache!(u8, |s: &str| s.bytes().last().unwrap());
+        let strs = ["foo", "bar", "baz"];
+        let syms = strs.map(Tstr::from);
+        let exp_data = [b'o', b'r', b'z'];
+        for (s, e) in syms.iter().copied().zip(exp_data) {
+            assert_eq!(*s.as_data(), e);
+        }
+    }
 }
 
 lazy_static::lazy_static! {
-    static ref STRING_CACHE: Bins = {
-        use std::mem::{self, MaybeUninit};
-        // This deeply unsafe feeling dance allows us to initialize an array of
-        // arbitrary size and will have to tide us over until const generics
-        // land. See:
-        // https://doc.rust-lang.org/beta/std/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
+    static ref STRING_CACHE: Bins<Dataless> = Bins::new();
+}
 
-        // Create an uninitialized array of `MaybeUninit`. The `assume_init` is
-        // safe because the type we are claiming to have initialized here is a
-        // bunch of `MaybeUninit`s, which do not require initialization.
-        let mut bins: [MaybeUninit<Mutex<StringCache>>; NUM_BINS] = unsafe {
-            MaybeUninit::uninit().assume_init()
-        };
+pub struct Dataless;
 
-        // Dropping a `MaybeUninit` does nothing. Thus using raw pointer
-        // assignment instead of `ptr::write` does not cause the old
-        // uninitialized value to be dropped. Also if there is a panic during
-        // this loop, we have a memory leak, but there is no memory safety
-        // issue.
-        for bin in &mut bins[..] {
-            *bin = MaybeUninit::new(Mutex::new(StringCache::default()));
-        }
+impl StringCacheNs for Dataless {
+    type Data = ();
 
-        // Everything is initialized. Transmute the array to the
-        // initialized type.
-        unsafe { mem::transmute::<_, Bins>(bins) }
-    };
+    fn derive_cache_data(_s: &str) -> Self::Data {}
+
+    fn cache() -> &'static Bins<Dataless> {
+        &STRING_CACHE
+    }
 }
 
 // Use the top bits of the hash to choose a bin

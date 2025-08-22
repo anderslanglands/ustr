@@ -1,17 +1,22 @@
-use super::Ustr;
+use crate::{Dataless, InternedString};
+
 use byteorder::{ByteOrder, NativeEndian};
 use std::{
     collections::{HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
 };
 
+pub type InternedStringMap<V, N> =
+    HashMap<InternedString<N>, V, BuildHasherDefault<IdentityHasher>>;
 /// A standard `HashMap` using `Ustr` as the key type with a custom `Hasher`
 /// that just uses the precomputed hash for speed instead of calculating it.
-pub type UstrMap<V> = HashMap<Ustr, V, BuildHasherDefault<IdentityHasher>>;
+pub type UstrMap<V> = InternedStringMap<V, Dataless>;
 
 /// A standard `HashSet` using `Ustr` as the key type with a custom `Hasher`
 /// that just uses the precomputed hash for speed instead of calculating it.
-pub type UstrSet = HashSet<Ustr, BuildHasherDefault<IdentityHasher>>;
+pub type InternedStringSet<N> =
+    HashSet<InternedString<N>, BuildHasherDefault<IdentityHasher>>;
+pub type UstrSet = InternedStringSet<Dataless>;
 
 /// The worst hasher in the world -- the identity hasher.
 #[doc(hidden)]
