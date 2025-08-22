@@ -66,7 +66,7 @@
 //! use ustr::{Ustr, ustr, Dataless};
 //! let u_ser = ustr("serde");
 //! let json = serde_json::to_string(&u_ser).unwrap();
-//! let u_de : Ustr<Dataless> = serde_json::from_str(&json).unwrap();
+//! let u_de : Ustr = serde_json::from_str(&json).unwrap();
 //! assert_eq!(u_ser, u_de);
 //! # }
 //! ```
@@ -186,28 +186,37 @@ pub mod serialization;
 #[cfg(feature = "serde")]
 pub use serialization::DeserializedCache;
 
-/// A handle representing a string in the global string cache.
+/// A generic handle representing a string in any global string cache.
 ///
-/// To use, create one using [`Ustr::from`] or the [`ustr`] function. You can
-/// freely copy, destroy or send `Ustr`s to other threads: the underlying string
-/// is always valid in memory (and is never destroyed).
+/// You can freely copy, destroy or send these to other threads: the underlying
+/// string is always valid in memory (and is never destroyed).
+///
+/// In the basic case of wanting a single global string cache, use [`Ustr`], as
+/// in [`Ustr::from`] or [`ustr`].
+///
+/// If you desire multiple distinct namespaces or associated data, create a new
+/// [`StringCacheNs`] and create your own typedef for `InternedString<MyNs>`.
 #[repr(transparent)]
-pub struct Ustr<N: StringCacheNs> {
+pub struct InternedString<N: StringCacheNs = Dataless> {
     char_ptr: NonNull<u8>,
     __phantom: PhantomData<N>,
 }
 
-impl<N: StringCacheNs> Clone for Ustr<N> {
+/// A handle representing a string in the [`Dataless`] global string cache.
+///
+/// To use, create one using [`Ustr::from`] or the [`ustr`] function. You can
+/// freely copy, destroy or send `Ustr`s to other threads: the underlying string
+/// is always valid in memory (and is never destroyed).
+pub type Ustr = InternedString<Dataless>;
+
+impl<N: StringCacheNs> Clone for InternedString<N> {
     fn clone(&self) -> Self {
-        Self {
-            char_ptr: self.char_ptr.clone(),
-            __phantom: self.__phantom.clone(),
-        }
+        *self
     }
 }
-impl<N: StringCacheNs> Copy for Ustr<N> {}
+impl<N: StringCacheNs> Copy for InternedString<N> {}
 
-impl<N: StringCacheNs> PartialEq for Ustr<N> {
+impl<N: StringCacheNs> PartialEq for InternedString<N> {
     fn eq(&self, other: &Self) -> bool {
         self.char_ptr.eq(&other.char_ptr)
     }
@@ -216,8 +225,8 @@ impl<N: StringCacheNs> PartialEq for Ustr<N> {
 /// Defer to `str` for equality.
 ///
 /// Lexicographic ordering will be slower than pointer comparison, but much less
-/// surprising if you use `Ustr`s as keys in e.g. a `BTreeMap`.
-impl<N: StringCacheNs> Ord for Ustr<N> {
+/// surprising if you use `InternedString`s as keys in e.g. a `BTreeMap`.
+impl<N: StringCacheNs> Ord for InternedString<N> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_str().cmp(other.as_str())
     }
@@ -226,16 +235,16 @@ impl<N: StringCacheNs> Ord for Ustr<N> {
 /// Defer to `str` for equality.
 ///
 /// Lexicographic ordering will be slower thanpointer comparison, but much less
-/// surprising if you use `Ustr`s as keys in e.g. a `BTreeMap`.
+/// surprising if you use `InternedString`s as keys in e.g. a `BTreeMap`.
 #[allow(clippy::non_canonical_partial_ord_impl)]
-impl<N: StringCacheNs> PartialOrd for Ustr<N> {
+impl<N: StringCacheNs> PartialOrd for InternedString<N> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<N: StringCacheNs> Ustr<N> {
-    /// Create a new `Ustr` from the given `str`.
+impl<N: StringCacheNs> InternedString<N> {
+    /// Create a new `Ustr`/`InternedString` from the given `str`.
     ///
     /// Derives new `StringCacheNs::Data` if `str` was not already in the cache.
     ///
@@ -252,14 +261,14 @@ impl<N: StringCacheNs> Ustr<N> {
     /// assert_eq!(u1, u2);
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
-    pub fn from(string: &str) -> Ustr<N> {
+    pub fn from(string: &str) -> InternedString<N> {
         let hash = {
             let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
         let mut sc = N::cache().0[whichbin(hash)].lock();
-        Ustr {
+        InternedString {
             // SAFETY: sc.insert does not give back a null pointer
             char_ptr: unsafe {
                 NonNull::new_unchecked(sc.insert(string, hash) as *mut _)
@@ -271,14 +280,14 @@ impl<N: StringCacheNs> Ustr<N> {
     /// Create a new `Ustr` for the given `str`, but only if it already exists.
     ///
     /// Never derives new `StringCacheNs::Data`.
-    pub fn from_existing(string: &str) -> Option<Ustr<N>> {
+    pub fn from_existing(string: &str) -> Option<InternedString<N>> {
         let hash = {
             let mut hasher = ahash::AHasher::default();
             hasher.write(string.as_bytes());
             hasher.finish()
         };
         let sc = N::cache().0[whichbin(hash)].lock();
-        sc.get_existing(string, hash).map(|ptr| Ustr {
+        sc.get_existing(string, hash).map(|ptr| InternedString {
             char_ptr: unsafe { NonNull::new_unchecked(ptr as *mut _) },
             __phantom: Default::default(),
         })
@@ -303,7 +312,7 @@ impl<N: StringCacheNs> Ustr<N> {
         // 2) len is a usize stored usize aligned usize bytes before char_ptr
         // 3) char_ptr points to a valid UTF-8 string of len bytes.
         // All these are guaranteed by StringCache::insert() and by the fact
-        // we can only construct a Ustr from a valid &str.
+        // we can only construct a InternedString from a valid &str.
         unsafe {
             str::from_utf8_unchecked(slice::from_raw_parts(
                 self.char_ptr.as_ptr(),
@@ -408,138 +417,138 @@ impl<N: StringCacheNs> Ustr<N> {
 // We're safe to impl these because the strings they reference are immutable
 // and for all intents and purposes 'static since they're never deleted after
 // being created
-unsafe impl<N: StringCacheNs> Send for Ustr<N> {}
-unsafe impl<N: StringCacheNs> Sync for Ustr<N> {}
+unsafe impl<N: StringCacheNs> Send for InternedString<N> {}
+unsafe impl<N: StringCacheNs> Sync for InternedString<N> {}
 
-impl<N: StringCacheNs> PartialEq<str> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<str> for InternedString<N> {
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for str {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<&str> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<&str> for InternedString<N> {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &str {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<&&str> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<&&str> for InternedString<N> {
     fn eq(&self, other: &&&str) -> bool {
         self.as_str() == **other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &&str {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &&str {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         **self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<String> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<String> for InternedString<N> {
     fn eq(&self, other: &String) -> bool {
         self.as_str() == other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for String {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for String {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<&String> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<&String> for InternedString<N> {
     fn eq(&self, other: &&String) -> bool {
         self.as_str() == *other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &String {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &String {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Box<str>> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<Box<str>> for InternedString<N> {
     fn eq(&self, other: &Box<str>) -> bool {
         self.as_str() == &**other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for Box<str> {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Box<str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &**self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &Box<str> {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Box<str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &***self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Cow<'_, str>> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<Cow<'_, str>> for InternedString<N> {
     fn eq(&self, other: &Cow<'_, str>) -> bool {
         self.as_str() == &*other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for Cow<'_, str> {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Cow<'_, str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &*self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<&Cow<'_, str>> for Ustr<N> {
+impl<N: StringCacheNs> PartialEq<&Cow<'_, str>> for InternedString<N> {
     fn eq(&self, other: &&Cow<'_, str>) -> bool {
         self.as_str() == &**other
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &Cow<'_, str> {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Cow<'_, str> {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         &**self == u.as_str()
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for Path {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for Path {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == Path::new(u)
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &Path {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &Path {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == Path::new(u)
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for OsStr {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for OsStr {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         self == OsStr::new(u)
     }
 }
 
-impl<N: StringCacheNs> PartialEq<Ustr<N>> for &OsStr {
-    fn eq(&self, u: &Ustr<N>) -> bool {
+impl<N: StringCacheNs> PartialEq<InternedString<N>> for &OsStr {
+    fn eq(&self, u: &InternedString<N>) -> bool {
         *self == OsStr::new(u)
     }
 }
 
-impl<N: StringCacheNs> Eq for Ustr<N> {}
+impl<N: StringCacheNs> Eq for InternedString<N> {}
 
-impl<T: ?Sized, N: StringCacheNs> AsRef<T> for Ustr<N>
+impl<T: ?Sized, N: StringCacheNs> AsRef<T> for InternedString<N>
 where
     str: AsRef<T>,
 {
@@ -548,113 +557,113 @@ where
     }
 }
 
-impl<N: StringCacheNs> FromStr for Ustr<N> {
+impl<N: StringCacheNs> FromStr for InternedString<N> {
     type Err = std::string::ParseError;
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Ustr::from(s))
+        Ok(InternedString::from(s))
     }
 }
 
-impl<N: StringCacheNs> From<&str> for Ustr<N> {
-    fn from(s: &str) -> Ustr<N> {
-        Ustr::from(s)
+impl<N: StringCacheNs> From<&str> for InternedString<N> {
+    fn from(s: &str) -> InternedString<N> {
+        InternedString::from(s)
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for &'static str {
-    fn from(s: Ustr<N>) -> &'static str {
+impl<N: StringCacheNs> From<InternedString<N>> for &'static str {
+    fn from(s: InternedString<N>) -> &'static str {
         s.as_str()
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for String {
-    fn from(u: Ustr<N>) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for String {
+    fn from(u: InternedString<N>) -> Self {
         String::from(u.as_str())
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for Box<str> {
-    fn from(u: Ustr<N>) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Box<str> {
+    fn from(u: InternedString<N>) -> Self {
         Box::from(u.as_str())
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for Rc<str> {
-    fn from(u: Ustr<N>) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Rc<str> {
+    fn from(u: InternedString<N>) -> Self {
         Rc::from(u.as_str())
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for Arc<str> {
-    fn from(u: Ustr<N>) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Arc<str> {
+    fn from(u: InternedString<N>) -> Self {
         Arc::from(u.as_str())
     }
 }
 
-impl<N: StringCacheNs> From<Ustr<N>> for Cow<'static, str> {
-    fn from(u: Ustr<N>) -> Self {
+impl<N: StringCacheNs> From<InternedString<N>> for Cow<'static, str> {
+    fn from(u: InternedString<N>) -> Self {
         Cow::Borrowed(u.as_str())
     }
 }
 
-impl<N: StringCacheNs> From<String> for Ustr<N> {
-    fn from(s: String) -> Ustr<N> {
-        Ustr::from(&s)
+impl<N: StringCacheNs> From<String> for InternedString<N> {
+    fn from(s: String) -> InternedString<N> {
+        InternedString::from(&s)
     }
 }
 
-impl<N: StringCacheNs> From<&String> for Ustr<N> {
-    fn from(s: &String) -> Ustr<N> {
-        Ustr::from(&**s)
+impl<N: StringCacheNs> From<&String> for InternedString<N> {
+    fn from(s: &String) -> InternedString<N> {
+        InternedString::from(&**s)
     }
 }
 
-impl<N: StringCacheNs> From<Box<str>> for Ustr<N> {
-    fn from(s: Box<str>) -> Ustr<N> {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Box<str>> for InternedString<N> {
+    fn from(s: Box<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl<N: StringCacheNs> From<Rc<str>> for Ustr<N> {
-    fn from(s: Rc<str>) -> Ustr<N> {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Rc<str>> for InternedString<N> {
+    fn from(s: Rc<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl<N: StringCacheNs> From<Arc<str>> for Ustr<N> {
-    fn from(s: Arc<str>) -> Ustr<N> {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Arc<str>> for InternedString<N> {
+    fn from(s: Arc<str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl<N: StringCacheNs> From<Cow<'_, str>> for Ustr<N> {
-    fn from(s: Cow<'_, str>) -> Ustr<N> {
-        Ustr::from(&*s)
+impl<N: StringCacheNs> From<Cow<'_, str>> for InternedString<N> {
+    fn from(s: Cow<'_, str>) -> InternedString<N> {
+        InternedString::from(&*s)
     }
 }
 
-impl<N: StringCacheNs> Default for Ustr<N> {
+impl<N: StringCacheNs> Default for InternedString<N> {
     fn default() -> Self {
-        Ustr::from("")
+        InternedString::from("")
     }
 }
 
-impl<N: StringCacheNs> Deref for Ustr<N> {
+impl<N: StringCacheNs> Deref for InternedString<N> {
     type Target = str;
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
 }
 
-impl<N: StringCacheNs> fmt::Display for Ustr<N> {
+impl<N: StringCacheNs> fmt::Display for InternedString<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl<N: StringCacheNs> fmt::Debug for Ustr<N> {
+impl<N: StringCacheNs> fmt::Debug for InternedString<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "u!({:?})", self.as_str())
     }
@@ -662,7 +671,7 @@ impl<N: StringCacheNs> fmt::Debug for Ustr<N> {
 
 // Just feed the precomputed hash into the Hasher. Note that this will of course
 // be terrible unless the Hasher in question is expecting a precomputed hash.
-impl<N: StringCacheNs> Hash for Ustr<N> {
+impl<N: StringCacheNs> Hash for InternedString<N> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.precomputed_hash().hash(state);
     }
@@ -679,9 +688,7 @@ impl<N: StringCacheNs> Hash for Ustr<N> {
 /// DO NOT CALL THIS.
 #[doc(hidden)]
 pub unsafe fn _clear_cache<N: StringCacheNs>() {
-    for m in N::cache().0.iter() {
-        m.lock().clear();
-    }
+    N::_clear_cache();
 }
 
 /// Returns the total amount of memory allocated and in use by the cache in
@@ -725,7 +732,7 @@ pub fn total_capacity() -> usize {
 /// assert_eq!(ustr::num_entries(), 1);
 /// ```
 #[inline]
-pub fn ustr(s: &str) -> Ustr<Dataless> {
+pub fn ustr(s: &str) -> Ustr {
     Ustr::from(s)
 }
 
@@ -746,7 +753,7 @@ pub fn ustr(s: &str) -> Ustr<Dataless> {
 /// assert_eq!(u3, Some(u2));
 /// ```
 #[inline]
-pub fn existing_ustr(s: &str) -> Option<Ustr<Dataless>> {
+pub fn existing_ustr(s: &str) -> Option<Ustr> {
     Ustr::from_existing(s)
 }
 
@@ -857,10 +864,9 @@ mod tests {
     use crate::{Bins, Dataless, StringCacheNs};
 
     use super::TEST_LOCK;
-    use lazy_static::lazy_static;
     use std::ffi::OsStr;
     use std::path::Path;
-    use std::sync::{LazyLock, Mutex};
+    use std::sync::LazyLock;
 
     #[test]
     fn it_works() {
@@ -1088,12 +1094,12 @@ mod tests {
     fn serialization_ustr() {
         let _t = TEST_LOCK.lock();
 
-        use super::{ustr, Dataless, Ustr};
+        use super::{ustr, Ustr};
 
         let u_hello = ustr("hello");
 
         let json = serde_json::to_string(&u_hello).unwrap();
-        let me_hello: Ustr<Dataless> = serde_json::from_str(&json).unwrap();
+        let me_hello: Ustr = serde_json::from_str(&json).unwrap();
 
         assert_eq!(u_hello, me_hello);
     }
@@ -1199,6 +1205,7 @@ mod tests {
                     &TEST_CACHE
                 }
             }
+            type Tstr = super::InternedString<TestNs>;
         };
     }
 
@@ -1206,7 +1213,7 @@ mod tests {
     fn non_dataless() {
         define_cache!(char, |s: &str| s.chars().last().unwrap());
         let strs = ["foo", "bar", "baz"];
-        let syms = strs.map(super::Ustr::<TestNs>::from);
+        let syms = strs.map(Tstr::from);
         let exp_data = ['o', 'r', 'z'];
         for (s, e) in syms.iter().copied().zip(exp_data) {
             assert_eq!(*s.as_data(), e);
@@ -1219,7 +1226,7 @@ mod tests {
     fn non_dataless_odd_size() {
         define_cache!(u8, |s: &str| s.bytes().last().unwrap());
         let strs = ["foo", "bar", "baz"];
-        let syms = strs.map(super::Ustr::<TestNs>::from);
+        let syms = strs.map(Tstr::from);
         let exp_data = [b'o', b'r', b'z'];
         for (s, e) in syms.iter().copied().zip(exp_data) {
             assert_eq!(*s.as_data(), e);

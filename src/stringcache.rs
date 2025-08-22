@@ -19,7 +19,7 @@ use super::bumpalloc::LeakyBumpAlloc;
 ///
 /// ```
 /// use std::sync::LazyLock;
-/// use ustr::{Bins, StringCacheNs, Ustr};
+/// use ustr::{Bins, StringCacheNs, InternedString, Ustr};
 /// # unsafe { ustr::_clear_cache::<TestNs>() };
 ///
 /// // Defines a cache that stores the last character as its data.
@@ -36,9 +36,10 @@ use super::bumpalloc::LeakyBumpAlloc;
 ///         &TEST_NS
 ///     }
 /// }
+/// type Tstr = InternedString<TestNs>;
 ///
-/// let u = Ustr::<TestNs>::from("foo");
-/// assert_eq!(*u.as_data(), 'o');
+/// let t = Tstr::from("foo");
+/// assert_eq!(*t.as_data(), 'o');
 /// ```
 pub trait StringCacheNs: Sized + 'static {
     type Data: 'static + Clone + Send + Sync + Sized;
@@ -94,6 +95,23 @@ pub trait StringCacheNs: Sized + 'static {
                 t
             })
             .collect::<Vec<_>>()
+    }
+
+    /// DO NOT CALL THIS.
+    ///
+    /// Clears the cache -- used for benchmarking and testing purposes to clear
+    /// the cache. Calling this will invalidate any previously created
+    /// `UStr`s and probably cause your house to burn down. DO NOT CALL
+    /// THIS.
+    ///
+    /// # Safety
+    ///
+    /// DO NOT CALL THIS.
+    #[doc(hidden)]
+    unsafe fn _clear_cache() {
+        for m in Self::cache().0.iter() {
+            m.lock().clear();
+        }
     }
 }
 

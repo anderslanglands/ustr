@@ -76,7 +76,7 @@ impl<N: StringCacheNs> UstrVisitor<N> {
 }
 
 impl<'de, N: StringCacheNs> Visitor<'de> for UstrVisitor<N> {
-    type Value = Ustr<N>;
+    type Value = InternedString<N>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a &str")
@@ -86,12 +86,12 @@ impl<'de, N: StringCacheNs> Visitor<'de> for UstrVisitor<N> {
     where
         E: Error,
     {
-        Ok(Ustr::from(s))
+        Ok(InternedString::from(s))
     }
 }
 
-impl<'de, N: StringCacheNs> Deserialize<'de> for Ustr<N> {
-    fn deserialize<D>(deserializer: D) -> Result<Ustr<N>, D::Error>
+impl<'de, N: StringCacheNs> Deserialize<'de> for InternedString<N> {
+    fn deserialize<D>(deserializer: D) -> Result<InternedString<N>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -99,7 +99,7 @@ impl<'de, N: StringCacheNs> Deserialize<'de> for Ustr<N> {
     }
 }
 
-impl<N: StringCacheNs> Serialize for Ustr<N> {
+impl<N: StringCacheNs> Serialize for InternedString<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
