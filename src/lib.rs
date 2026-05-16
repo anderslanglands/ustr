@@ -208,7 +208,7 @@ impl Ord for Ustr {
 
 /// Defer to `str` for equality.
 ///
-/// Lexicographic ordering will be slower thanpointer comparison, but much less
+/// Lexicographic ordering will be slower than pointer comparison, but much less
 /// surprising if you use `Ustr`s as keys in e.g. a `BTreeMap`.
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Ustr {
@@ -451,25 +451,25 @@ impl PartialEq<Ustr> for &Box<str> {
 
 impl PartialEq<Cow<'_, str>> for Ustr {
     fn eq(&self, other: &Cow<'_, str>) -> bool {
-        self.as_str() == &*other
+        self.as_str() == &**other
     }
 }
 
 impl PartialEq<Ustr> for Cow<'_, str> {
     fn eq(&self, u: &Ustr) -> bool {
-        &*self == u.as_str()
+        &**self == u.as_str()
     }
 }
 
 impl PartialEq<&Cow<'_, str>> for Ustr {
     fn eq(&self, other: &&Cow<'_, str>) -> bool {
-        self.as_str() == &**other
+        self.as_str() == &***other
     }
 }
 
 impl PartialEq<Ustr> for &Cow<'_, str> {
     fn eq(&self, u: &Ustr) -> bool {
-        &**self == u.as_str()
+        &***self == u.as_str()
     }
 }
 
@@ -610,7 +610,7 @@ impl Deref for Ustr {
 
 impl fmt::Display for Ustr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+        <str as fmt::Display>::fmt(self.as_str(), f)
     }
 }
 
