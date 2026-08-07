@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate criterion;
-use criterion::black_box;
 use criterion::Criterion;
 use crossbeam_channel::bounded;
 use crossbeam_utils::thread::scope;
+use std::hint::black_box;
 use std::sync::Arc;
 use string_cache::DefaultAtom;
-use string_interner::StringInterner;
+use string_interner::{StringInterner, backend::StringBackend};
 
 use ustr::*;
 
@@ -45,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let s = raft.clone();
     c.bench_function("single raft string-interner", move |b| {
         b.iter(|| {
-            let mut interner = StringInterner::default();
+            let mut interner = StringInterner::<StringBackend>::default();
             for s in s.iter().cycle().take(100_000) {
                 black_box(interner.get_or_intern(s));
             }
@@ -121,9 +121,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         c.bench_function(
             &format!("raft string-interner x {} threads", num_threads),
             move |b| {
-                let (tx1, rx1) = bounded::<
-                    Arc<Mutex<StringInterner<string_interner::DefaultSymbol>>>,
-                >(0);
+                let (tx1, rx1) =
+                    bounded::<Arc<Mutex<StringInterner<StringBackend>>>>(0);
                 let (tx2, rx2) = bounded(0);
                 scope(|scope| {
                     for tt in 0..num_threads {
@@ -144,8 +143,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     b.iter(|| {
-                        let interner =
-                            Arc::new(Mutex::new(StringInterner::default()));
+                        let interner = Arc::new(Mutex::new(StringInterner::<
+                            StringBackend,
+                        >::default(
+                        )));
                         for _ in 0..num_threads {
                             tx1.send(interner.clone()).unwrap();
                         }

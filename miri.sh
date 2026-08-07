@@ -7,10 +7,9 @@ export CARGO_NET_TIMEOUT=10
 
 MIRI_NIGHTLY=nightly-$(curl -s https://rust-lang.github.io/rustup-components-history/x86_64-unknown-linux-gnu/miri)
 echo "Installing latest nightly with Miri: $MIRI_NIGHTLY"
-rustup default "$MIRI_NIGHTLY"
+rustup toolchain install "$MIRI_NIGHTLY" --component miri
 
-rustup component add miri
-cargo miri setup
+rustup run "$MIRI_NIGHTLY" cargo miri setup
 
 export RUST_TEST_THREADS=1
-cargo miri test --features=serde
+rustup run "$MIRI_NIGHTLY" cargo miri test --features=serde

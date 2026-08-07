@@ -1,12 +1,10 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 
-// The world's dumbest allocator. Just keep bumping a pointer until we run out
-// of memory, in which case we abort. StringCache is responsible for creating
-// a new allocator when that's about to happen.
-// This is now bumping downward rather than up, which simplifies the allocate()
-// method and gives a small (5-7%) performance improvement in multithreaded
-// benchmarks
-// See https://fitzgeraldnick.com/2019/11/01/always-bump-downwards.html
+/// Simple, fast bump allocator specialized for the string cache.
+/// Bumps a pointer downward and aborts on exhaustion; callers are expected
+/// to rotate in a new allocator before that happens.
+///
+/// See <https://fitzgeraldnick.com/2019/11/01/always-bump-downwards.html>
 pub(crate) struct LeakyBumpAlloc {
     layout: Layout,
     start: *mut u8,
@@ -16,35 +14,53 @@ pub(crate) struct LeakyBumpAlloc {
 
 impl LeakyBumpAlloc {
     pub fn new(capacity: usize, alignment: usize) -> LeakyBumpAlloc {
-        let layout = Layout::from_size_align(capacity, alignment).unwrap();
+        let layout = Layout::from_size_align(capacity, alignment)
+            .expect("invalid layout");
+        // SAFETY: `layout` is valid (non-zero size, power-of-two alignment)
+        // since `from_size_align` succeeded. We check for null below.
         let start = unsafe { System.alloc(layout) };
         if start.is_null() {
-            panic!("oom");
+            // Abort rather than panic to avoid poisoning the cache mutex.
+            std::process::abort();
         }
+        // SAFETY: `start` is non-null and points to an allocation of
+        // `layout.size()` bytes, so `start + layout.size()` is one past
+        // the end of that allocation, which is a valid pointer value.
         let end = unsafe { start.add(layout.size()) };
-        let ptr = end;
         LeakyBumpAlloc {
             layout,
             start,
             end,
-            ptr,
+            ptr: end,
         }
     }
 
+    /// # Safety
+    ///
+    /// This deallocates the backing memory. Caller must ensure no references
+    /// to memory handed out by `allocate` are still in use. Intended only for
+    /// benchmark cleanup.
     #[doc(hidden)]
-    // used for resetting the cache between benchmark runs. DO NOT CALL THIS.
     pub unsafe fn clear(&mut self) {
-        System.dealloc(self.start, self.layout);
+        // SAFETY: `self.start` was allocated via `System.alloc` with
+        // `self.layout`, and the caller guarantees no outstanding references.
+        unsafe {
+            System.dealloc(self.start, self.layout);
+        }
     }
 
-    // Allocates a new chunk. Aborts if out of memory.
+    /// # Safety
+    ///
+    /// The returned pointer is valid for writes of `num_bytes` bytes and
+    /// remains valid for the lifetime of the allocator (i.e., until `clear`
+    /// is called). Caller must ensure proper initialization before reading.
     pub unsafe fn allocate(&mut self, num_bytes: usize) -> *mut u8 {
-        // Our new ptr will be offset down the heap by num_bytes bytes.
         let ptr = self.ptr as usize;
-        let new_ptr = ptr.checked_sub(num_bytes).expect("ptr sub overflowed");
-        // Round down to alignment.
+        let new_ptr = ptr
+            .checked_sub(num_bytes)
+            .expect("pointer subtraction overflowed");
+        // Round down to the allocator's alignment.
         let new_ptr = new_ptr & !(self.layout.align() - 1);
-        // Check we have enough capacity.
         let start = self.start as usize;
         if new_ptr < start {
             eprintln!(
@@ -52,28 +68,21 @@ impl LeakyBumpAlloc {
                 self.end as usize - new_ptr,
                 self.capacity()
             );
-            // We have to abort here rather than panic or the mutex may
-            // deadlock.
+            // Abort instead of panic to avoid poisoning the cache mutex.
             std::process::abort();
         }
 
-        self.ptr = self.ptr.sub(ptr - new_ptr);
+        self.ptr = new_ptr as *mut u8;
         self.ptr
     }
 
+    /// Bytes allocated from this bump region.
     pub fn allocated(&self) -> usize {
         self.end as usize - self.ptr as usize
     }
 
+    /// Total capacity of this bump region.
     pub fn capacity(&self) -> usize {
         self.layout.size()
-    }
-
-    pub(crate) fn end(&self) -> *const u8 {
-        self.end
-    }
-
-    pub(crate) fn ptr(&self) -> *const u8 {
-        self.ptr
     }
 }

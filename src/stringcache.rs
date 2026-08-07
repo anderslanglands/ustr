@@ -35,7 +35,8 @@ pub(crate) struct StringCache {
     entries: Vec<*mut StringCacheEntry>,
     num_entries: usize,
     mask: usize,
-    total_allocated: usize,
+    // Keep track of all allocated strings for iteration
+    pub(crate) all_strings: Vec<&'static str>,
     // Padding and aligning to 128 bytes gives up to 20% performance
     // improvement this actually aligns to 256 bytes because of the Mutex
     // around it.
@@ -73,7 +74,7 @@ impl StringCache {
             entries: vec![std::ptr::null_mut(); capacity],
             num_entries: 0,
             mask: capacity - 1,
-            total_allocated: capacity,
+            all_strings: Vec::new(),
             _pad: [0u32; 3],
         }
     }
@@ -176,8 +177,9 @@ impl StringCache {
         let byte_len = string.len() + 1;
         let alloc_size = std::mem::size_of::<StringCacheEntry>() + byte_len;
 
-        // if our new allocation would spill over the allocator, make a new
-        // allocator and let the old one leak
+        // Rotate allocators when the current one would overflow to keep a
+        // single contiguous bump region per shard (fastest for single-threaded
+        // inserts).
         let capacity = self.alloc.capacity();
         let allocated = self.alloc.allocated();
         if alloc_size
@@ -197,14 +199,11 @@ impl StringCache {
                 ),
             );
             self.old_allocs.push(old_alloc);
-            self.total_allocated += new_capacity;
         }
 
         // This is safe as long as:
         // 1. `alloc_size` is calculated correctly.
-        // 2. there is enough space in the allocator (checked in the block
-        //    above).
-        // 3. The `StringCacheEntry` layout descibed above holds and the memory
+        // 2. The `StringCacheEntry` layout descibed above holds and the memory
         //    returned by allocate() is prooperly aligned.
         unsafe {
             *entry_ptr =
@@ -232,6 +231,14 @@ impl StringCache {
             std::ptr::write(write_ptr, 0u8);
 
             self.num_entries += 1;
+
+            // Track the string for iteration
+            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                char_ptr,
+                string.len(),
+            ));
+            self.all_strings.push(s);
+
             // We want to keep an 0.5 load factor for the map, so grow if we've
             // exceeded that.
             if self.num_entries * 2 > self.mask {
@@ -249,72 +256,84 @@ impl StringCache {
     //
     // If there's not enough memory for the new entry table, it will just abort
     pub(crate) unsafe fn grow(&mut self) {
-        let new_mask = self.mask * 2 + 1;
+        unsafe {
+            let new_mask = self.mask * 2 + 1;
 
-        let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
-            vec![std::ptr::null_mut(); new_mask + 1];
+            let mut new_entries: std::vec::Vec<*mut StringCacheEntry> =
+                vec![std::ptr::null_mut(); new_mask + 1];
 
-        // copy the existing map into the new map
-        let mut to_copy = self.num_entries;
-        for e in self.entries.iter_mut() {
-            if e.is_null() {
-                continue;
-            }
-
-            // Start of the entry is the hash.
-            let hash = *(*e as *const u64);
-            let mut pos = (hash as usize) & new_mask;
-            let mut dist = 0;
-            loop {
-                if new_entries[pos].is_null() {
-                    // Here's an empty slot to put the pointer in.
-                    break;
+            // copy the existing map into the new map
+            let mut to_copy = self.num_entries;
+            for e in self.entries.iter_mut() {
+                if e.is_null() {
+                    continue;
                 }
 
-                dist += 1;
-                // This should be impossble as we've allocated twice as many
-                // slots as we have entries.
-                debug_assert!(dist <= new_mask, "Probing wrapped around");
-                pos = pos.wrapping_add(dist) & new_mask;
+                // Start of the entry is the hash.
+                let hash = *(*e as *const u64);
+                let mut pos = (hash as usize) & new_mask;
+                let mut dist = 0;
+                loop {
+                    if new_entries[pos].is_null() {
+                        // Here's an empty slot to put the pointer in.
+                        break;
+                    }
+
+                    dist += 1;
+                    // This should be impossble as we've allocated twice as many
+                    // slots as we have entries.
+                    debug_assert!(dist <= new_mask, "Probing wrapped around");
+                    pos = pos.wrapping_add(dist) & new_mask;
+                }
+
+                new_entries[pos] = *e;
+                to_copy -= 1;
+                if to_copy == 0 {
+                    break;
+                }
             }
 
-            new_entries[pos] = *e;
-            to_copy -= 1;
-            if to_copy == 0 {
-                break;
-            }
+            self.entries = new_entries;
+            self.mask = new_mask;
         }
-
-        self.entries = new_entries;
-        self.mask = new_mask;
     }
 
     // This is only called by `clear()` during tests to clear the cache between
     // runs. **DO NOT CALL THIS**.
     pub(crate) unsafe fn clear(&mut self) {
-        // just zero all the pointers that have already been set
-        std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
-        self.num_entries = 0;
-        self.total_allocated = 0;
-        for a in self.old_allocs.iter_mut() {
-            a.clear();
+        unsafe {
+            // just zero all the pointers that have already been set
+            std::ptr::write_bytes(self.entries.as_mut_ptr(), 0, self.mask + 1);
+            self.num_entries = 0;
+            self.all_strings.clear();
+            for a in self.old_allocs.iter_mut() {
+                a.clear();
+            }
+            self.old_allocs = Vec::new();
+            self.alloc.clear();
+            self.alloc = LeakyBumpAlloc::new(
+                INITIAL_ALLOC / NUM_BINS,
+                std::mem::align_of::<StringCacheEntry>(),
+            );
         }
-        self.old_allocs = Vec::new();
-        self.alloc.clear();
-        self.alloc = LeakyBumpAlloc::new(
-            INITIAL_ALLOC / NUM_BINS,
-            std::mem::align_of::<StringCacheEntry>(),
-        );
     }
 
     pub(crate) fn total_allocated(&self) -> usize {
         self.alloc.allocated()
-            + self.old_allocs.iter().map(|a| a.allocated()).sum::<usize>()
+            + self
+                .old_allocs
+                .iter()
+                .map(LeakyBumpAlloc::allocated)
+                .sum::<usize>()
     }
 
     pub(crate) fn total_capacity(&self) -> usize {
         self.alloc.capacity()
-            + self.old_allocs.iter().map(|a| a.capacity()).sum::<usize>()
+            + self
+                .old_allocs
+                .iter()
+                .map(LeakyBumpAlloc::capacity)
+                .sum::<usize>()
     }
 
     pub(crate) fn num_entries(&self) -> usize {
@@ -333,78 +352,58 @@ unsafe impl Send for StringCache {}
 
 #[doc(hidden)]
 pub struct StringCacheIterator {
-    pub(crate) allocs: Vec<(*const u8, *const u8)>,
-    pub(crate) current_alloc: usize,
-    pub(crate) current_ptr: *const u8,
-}
-
-fn round_up_to(n: usize, align: usize) -> usize {
-    debug_assert!(align.is_power_of_two());
-    (n.checked_add(align).expect("round_up_to overflowed") - 1) & !(align - 1)
+    pub(crate) strings: Vec<&'static str>,
+    pub(crate) current: usize,
 }
 
 impl Iterator for StringCacheIterator {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
-        // check that the cache is not empty before accessing
-        if self.allocs.is_empty() {
-            return None;
-        }
-
-        let (_, end) = self.allocs[self.current_alloc];
-        if self.current_ptr >= end {
-            // We've reached the end of the current alloc.
-            if self.current_alloc == self.allocs.len() - 1 {
-                // We've reached the end.
-                return None;
-            } else {
-                // Advance to the next alloc.
-                self.current_alloc += 1;
-                let (current_ptr, _) = self.allocs[self.current_alloc];
-                self.current_ptr = current_ptr;
-            }
-        }
-
-        // Cast the current ptr to a `StringCacheEntry` and create the next
-        // string from it.
-        unsafe {
-            let sce = &*(self.current_ptr as *const StringCacheEntry);
-            // The next entry will be the size of the number of bytes in the
-            // string, +1 for the null byte, rounded up to the alignment (8).
-            self.current_ptr = sce.next_entry();
-
-            // We know we're safe not to check here since we put valid UTF-8 in.
-            let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                sce.char_ptr(),
-                sce.len,
-            ));
+        if self.current < self.strings.len() {
+            let s = self.strings[self.current];
+            self.current += 1;
             Some(s)
+        } else {
+            None
         }
     }
 }
 
+/// Internal string cache entry with guaranteed memory layout for FFI
+/// compatibility.
+///
+/// # Memory Layout Guarantee
+///
+/// This struct has a stable C-compatible memory layout (`#[repr(C)]`) with the
+/// following guarantees:
+///
+/// ```text
+/// Offset  | Size    | Field | Description
+/// --------|---------|-------|-------------
+/// 0       | 8 bytes | hash  | 64-bit precomputed hash of the string
+/// 8       | 8 bytes | len   | Length of the string in bytes (64-bit systems)
+///         |         |       | or 4 bytes on 32-bit systems
+/// 16      | N bytes | data  | UTF-8 string bytes (not part of struct, follows immediately after)
+/// 16+N    | 1 byte  | null  | Null terminator for C compatibility
+/// 16+N+1  | 0-7     | pad   | Padding to ensure 8-byte alignment for next entry
+/// ```
+///
+/// This layout is guaranteed stable across versions for FFI compatibility.
+/// The string data immediately follows the struct in memory, making it safe to:
+/// - Pass to C functions expecting null-terminated strings
+/// - Calculate offsets for direct memory access
+/// - Iterate over cache entries
+///
+/// # Safety
+///
+/// The memory layout is critical for safety. The `Ustr` type stores a pointer
+/// to the character data (offset 16 in the layout above), and calculates the
+/// location of this header by subtracting `sizeof(StringCacheEntry)`.
 #[repr(C)]
 #[derive(Clone)]
 pub(crate) struct StringCacheEntry {
+    /// Precomputed hash of the string for O(1) comparisons
     pub(crate) hash: u64,
+    /// Length of the string in bytes (not including null terminator)
     pub(crate) len: usize,
-}
-
-impl StringCacheEntry {
-    // Get the pointer to the characters.
-    pub(crate) fn char_ptr(&self) -> *const u8 {
-        // We know the chars are always directly after this struct in memory
-        // because that's the way they're laid out on initialization.
-        unsafe { (self as *const StringCacheEntry).add(1) as *const u8 }
-    }
-
-    // Calcualte the address of the next entry in the cache. This is a utility
-    // function to hide the pointer arithmetic in iterators.
-    pub(crate) unsafe fn next_entry(&self) -> *const u8 {
-        #[allow(clippy::ptr_offset_with_cast)]
-        self.char_ptr().add(round_up_to(
-            self.len + 1,
-            std::mem::align_of::<StringCacheEntry>(),
-        ))
-    }
 }

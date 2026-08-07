@@ -1,8 +1,8 @@
 [package]
 name = "ustr"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Anders Langlands <anderslanglands@gmail.com>"]
-edition = "2021"
+edition = "2024"
 license = "BSD-2-Clause-Patent"
 description = "Fast, FFI-friendly string interning."
 documentation = "https://docs.rs/ustr"
@@ -11,26 +11,59 @@ readme = "README.md"
 keywords = ["string", "interning", "FFI"]
 categories = ["caching", "data-structures"]
 
-[badges]
-travis-ci = { repository = "anderslanglands/ustr", branch = "master" }
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+## Enables several functions that allow interaction with the global string
+## cache.
+cache_access = []
+## Enables `serde` serializing/deserializing the global string cache.
+serde = ["dep:serde"]
+## Enables `facet` reflection support for `Ustr`.
+facet = ["dep:facet"]
+## Enables `rkyv` archiving support for `Ustr`.
+rkyv = ["dep:rkyv"]
 
 [dependencies]
+ahash = { version = "0.8", default-features = false }
 byteorder = "1.5"
+document-features = "0.2"
+facet = { version = ">=0.44", optional = true }
 lazy_static = "1.5"
 parking_lot = "0.12"
+rkyv = { version = "0.8", optional = true }
 serde = { version = "1", optional = true }
-ahash = { version = "0.8.3", default-features = false }
-
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.8"
 crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
 libc = "0.2"
 serde_json = "1"
-string-interner = "0.13"
-string_cache = "0.8"
+string-interner = "0.19"
+string_cache = "0.9"
+
+[badges]
+travis-ci = { repository = "anderslanglands/ustr", branch = "master" }
 
 [[bench]]
 name = "creation"
+harness = false
+
+[[bench]]
+name = "operations"
+harness = false
+
+[[bench]]
+name = "memory"
+harness = false
+
+[[bench]]
+name = "concurrent"
+harness = false
+
+[[bench]]
+name = "static_vs_dynamic"
 harness = false

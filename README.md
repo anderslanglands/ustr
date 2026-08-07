@@ -91,6 +91,12 @@ assert_eq!(ustr::string_cache_iter().collect::<Vec<_>>(), vec!["Send me to JSON 
 
 ```
 
+## Features
+
+- `serde`: serialize/deserialize `Ustr` and the global cache.
+- `cache_access`: expose cache helpers like `cache()` and iterators.
+- `facet`: derive `Facet` reflection metadata for `Ustr` (opt-in dependency on the `facet` crate).
+
 ## Calling from C/C++
 
 If you are writing a library that uses ustr and want users to be able to create
