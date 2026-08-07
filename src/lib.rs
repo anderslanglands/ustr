@@ -254,10 +254,84 @@ use rkyv::{
 /// is always valid in memory (and is never destroyed).
 #[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
-#[cfg_attr(feature = "facet", derive(facet::Facet))]
 pub struct Ustr {
     char_ptr: NonNull<u8>,
 }
+
+// A `Ustr` is a handle into the global string cache, not a value that owns its
+// bytes. Deriving `Facet` would model it as a struct with a raw pointer field:
+// serializers would then write the pointer's numeric value and — far worse —
+// deserializers would write an arbitrary integer back into that field, handing
+// out a `Ustr` that dereferences to nothing. That is undefined behaviour, and
+// it has been observed in the wild as a `misaligned pointer dereference` abort
+// when a `Ustr` was parsed from TOML.
+//
+// So model `Ustr` as an opaque scalar instead. Every vtable entry goes through
+// the string: `display`/`debug` render `as_str()`, and `parse`/`try_from`
+// intern the incoming text through the global cache, which is the only way to
+// obtain a valid handle.
+#[cfg(feature = "facet")]
+const _: () = {
+    use facet::{
+        Def, Facet, PtrConst, Shape, ShapeBuilder, TryFromOutcome, Type,
+        TypeOpsDirect, UserType, VTableDirect, type_ops_direct, vtable_direct,
+    };
+
+    /// Interns the source string rather than copying a handle's bytes.
+    ///
+    /// # Safety
+    ///
+    /// `target` must be valid for writes of a `Ustr`, and `source` must point
+    /// to an initialised value of the type described by `source_shape`.
+    unsafe fn try_from_string_like(
+        target: *mut Ustr,
+        source_shape: &'static Shape,
+        source: PtrConst,
+    ) -> TryFromOutcome {
+        if source_shape.id == <&str as Facet>::SHAPE.id {
+            let text: &str = unsafe { source.get::<&str>() };
+            unsafe { target.write(Ustr::from(text)) };
+            TryFromOutcome::Converted
+        } else if source_shape.id == <String as Facet>::SHAPE.id {
+            let text: String = unsafe { source.read::<String>() };
+            unsafe { target.write(Ustr::from(text.as_str())) };
+            TryFromOutcome::Converted
+        } else {
+            TryFromOutcome::Unsupported
+        }
+    }
+
+    static USTR_TYPE_OPS: TypeOpsDirect =
+        type_ops_direct!(Ustr => Default, Clone);
+
+    unsafe impl Facet<'_> for Ustr {
+        const SHAPE: &'static Shape = &const {
+            // `FromStr` for `Ustr` interns through the global cache, so the
+            // `parse` entry this generates is the sound deserialisation path.
+            const VTABLE: VTableDirect = vtable_direct!(Ustr =>
+                FromStr,
+                Display,
+                Debug,
+                Hash,
+                PartialEq,
+                PartialOrd,
+                Ord,
+                [try_from = try_from_string_like],
+            );
+
+            ShapeBuilder::for_sized::<Ustr>("Ustr")
+                .module_path("ustr")
+                .ty(Type::User(UserType::Opaque))
+                .def(Def::Scalar)
+                .vtable_direct(&VTABLE)
+                .type_ops_direct(&USTR_TYPE_OPS)
+                .eq()
+                .send()
+                .sync()
+                .build()
+        };
+    }
+};
 
 /// Defer to `str` for equality.
 ///
