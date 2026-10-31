@@ -88,9 +88,10 @@ impl std::error::Error for IncompatibleInterner {}
 /// compare equal to the ones the other copy interns. The cache statistics and
 /// [`cache`](crate::cache) still describe this copy's own cache.
 ///
-/// The call interns a probe string and checks that its text, length, and
-/// precomputed hash read back as this copy computes them, so a copy with
-/// another entry layout or hash function is rejected.
+/// The call interns a probe string and checks that its text and length read
+/// back through this copy's entry layout, so a copy with another layout is
+/// rejected. Hashes are not compared: a build may seed its hasher differently,
+/// and every copy reads the hash the owning cache stored with the entry.
 ///
 /// # Errors
 ///
@@ -110,11 +111,7 @@ pub unsafe fn set_external_interner(
     let char_ptr =
         NonNull::new(chars.cast_mut()).ok_or(IncompatibleInterner)?;
     let probe = Ustr { char_ptr };
-    if probe.len() != PROBE.len()
-        || probe.as_str() != PROBE
-        || probe.precomputed_hash()
-            != Ustr::from_local(PROBE).precomputed_hash()
-    {
+    if probe.len() != PROBE.len() || probe.as_str() != PROBE {
         return Err(IncompatibleInterner);
     }
     EXTERNAL_INTERNER.store(interner as *mut (), Ordering::Release);
