@@ -180,6 +180,11 @@ mod bumpalloc;
 
 mod stringcache;
 pub use stringcache::*;
+mod external;
+pub use external::{
+    local_interner, set_external_interner, ExternalInterner,
+    IncompatibleInterner,
+};
 #[cfg(feature = "serde")]
 pub mod serialization;
 #[cfg(feature = "serde")]
@@ -234,11 +239,34 @@ impl Ustr {
     /// assert_eq!(ustr::num_entries(), 1);
     /// ```
     pub fn from(string: &str) -> Ustr {
-        let hash = {
-            let mut hasher = ahash::AHasher::default();
-            hasher.write(string.as_bytes());
-            hasher.finish()
-        };
+        if let Some(interner) = external::external_interner() {
+            // SAFETY: the string is readable for the call, and
+            // `set_external_interner` checked that the interner returns cached
+            // characters this copy reads.
+            let chars =
+                unsafe { interner(string.as_ptr(), string.len(), true) };
+            return Ustr {
+                // SAFETY: an inserting interner does not return null
+                char_ptr: unsafe { NonNull::new_unchecked(chars as *mut _) },
+            };
+        }
+        Self::from_local(string)
+    }
+
+    pub fn from_existing(string: &str) -> Option<Ustr> {
+        if let Some(interner) = external::external_interner() {
+            // SAFETY: as in `from`.
+            let chars =
+                unsafe { interner(string.as_ptr(), string.len(), false) };
+            return NonNull::new(chars as *mut _)
+                .map(|char_ptr| Ustr { char_ptr });
+        }
+        Self::from_existing_local(string)
+    }
+
+    // Interns `string` in this copy's own cache
+    pub(crate) fn from_local(string: &str) -> Ustr {
+        let hash = string_hash(string);
         let mut sc = STRING_CACHE.0[whichbin(hash)].lock();
         Ustr {
             // SAFETY: sc.insert does not give back a null pointer
@@ -248,12 +276,9 @@ impl Ustr {
         }
     }
 
-    pub fn from_existing(string: &str) -> Option<Ustr> {
-        let hash = {
-            let mut hasher = ahash::AHasher::default();
-            hasher.write(string.as_bytes());
-            hasher.finish()
-        };
+    // Looks `string` up in this copy's own cache
+    pub(crate) fn from_existing_local(string: &str) -> Option<Ustr> {
+        let hash = string_hash(string);
         let sc = STRING_CACHE.0[whichbin(hash)].lock();
         sc.get_existing(string, hash).map(|ptr| Ustr {
             char_ptr: unsafe { NonNull::new_unchecked(ptr as *mut _) },
@@ -1171,6 +1196,12 @@ lazy_static::lazy_static! {
 
 // Use the top bits of the hash to choose a bin
 #[inline]
+fn string_hash(string: &str) -> u64 {
+    let mut hasher = ahash::AHasher::default();
+    hasher.write(string.as_bytes());
+    hasher.finish()
+}
+
 fn whichbin(hash: u64) -> usize {
     ((hash >> TOP_SHIFT as u64) % NUM_BINS as u64) as usize
 }
